@@ -78,7 +78,7 @@ class OpenRGBBackend(Backend):
     def _note_failure(self, message: str) -> None:
         self._connected = False
         self._failures += 1
-        delay = min(self.cfg.reconnect_seconds * (2 ** min(self._failures - 1, 4)), 60.0)
+        delay = min(self.cfg.reconnect_seconds * (2 ** min(self._failures - 1, 5)), 30.0)
         self._next_attempt = time.monotonic() + delay
         if message != self._last_error:
             log.warning("%s (retrying in %.0fs)", message, delay)

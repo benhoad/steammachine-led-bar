@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -60,6 +62,35 @@ def _apply_env_overrides(config: Config) -> None:
         config.output.backend = backend
 
 
+def _service_active(unit: str = "ledbar.service") -> bool:
+    if not shutil.which("systemctl"):
+        return False
+    try:
+        return subprocess.run(["systemctl", "--user", "is-active", "--quiet", unit], timeout=5).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+@contextlib.contextmanager
+def _service_paused(backend_name: str):
+    """Stop the ledbar service while a manual command drives the strip, then start it again.
+
+    Otherwise the service keeps resending its own frames and wipes the test
+    pattern within a couple of seconds.
+    """
+    paused = False
+    if backend_name == "openrgb" and _service_active():
+        print("Pausing the ledbar service while this runs ...")
+        subprocess.run(["systemctl", "--user", "stop", "ledbar.service"], check=False)
+        paused = True
+    try:
+        yield
+    finally:
+        if paused:
+            subprocess.run(["systemctl", "--user", "start", "ledbar.service"], check=False)
+            print("ledbar service resumed.")
+
+
 # --------------------------------------------------------------------------
 # commands
 # --------------------------------------------------------------------------
@@ -95,12 +126,12 @@ def cmd_demo(args: argparse.Namespace) -> int:
     else:
         steps = default_script(config)
     inputs = ScriptedInputs(config, steps, loop=args.loop)
-    if backend.name == "terminal":
-        print("Demo: " + " -> ".join(f"{s.name} {s.seconds:.0f}s" for s in steps) + ("  (looping)" if args.loop else ""))
+    print("Demo: " + " -> ".join(f"{s.name} {s.seconds:.0f}s" for s in steps) + ("  (looping)" if args.loop else ""))
     daemon = Daemon(config, backend, inputs)
     # stop automatically once the script has finished (unless looping)
     total = None if args.loop else inputs.total + 0.5
-    return daemon.run(max_seconds=total)
+    with _service_paused(backend.name):
+        return daemon.run(max_seconds=total)
 
 
 def cmd_identify(args: argparse.Namespace) -> int:
@@ -119,7 +150,15 @@ def cmd_identify(args: argparse.Namespace) -> int:
     blue = to_rgb8((0, 0, 1), 1.0, brightness)
     off = [(0, 0, 0)] * total
 
+    with _service_paused(backend.name):
+        return _identify_sequence(backend, config, total, red, green, blue, white, bar, off)
+
+
+def _identify_sequence(backend, config, total, red, green, blue, white, bar, off) -> int:
     backend.open()
+    if not backend.healthy:
+        print("Could not connect to OpenRGB; see the messages above and `ledbar status`.")
+        return 3
     print(f"Output: {backend.describe()}")
     print(f"Chain length used: {total} LEDs (count {config.leds.count} + offset {config.leds.offset})")
     print()

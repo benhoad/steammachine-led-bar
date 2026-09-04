@@ -13,7 +13,7 @@ reverse = false       # true if the FIRST LED of the chain is at the RIGHT end o
                       # The bar always fills from left to right; "reverse" flips the mapping.
 offset = 0            # LEDs at the start of the chain that are not part of the bar (hidden/skipped)
 brightness = 60       # maximum brightness, 0-100 %
-gamma = 2.2           # perceptual correction for dimming/fades; 1.0 = linear
+gamma = 2.2           # makes fades/breathing look even to the eye; does not affect max brightness
 color_order = "RGB"   # if red/green/blue come out wrong: "GRB", "BRG", "RBG", "GBR", "BGR"
 fps = 30              # animation frame rate sent to the controller (10-60 is sensible)
 keepalive_seconds = 2.0  # resend an unchanged frame at least this often

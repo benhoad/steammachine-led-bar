@@ -18,9 +18,13 @@ class ColorTests(unittest.TestCase):
 
     def test_gamma_and_brightness(self):
         self.assertEqual(to_rgb8((1.0, 1.0, 1.0), 2.2, 1.0), (255, 255, 255))
+        # brightness is linear regardless of gamma: 20 % really is 20 % of the drive level
         self.assertEqual(to_rgb8((1.0, 0.0, 0.0), 1.0, 0.5), (128, 0, 0))
-        # gamma 2.2 makes 50 % brightness noticeably darker in raw PWM terms
-        self.assertLess(to_rgb8((1.0, 0.0, 0.0), 2.2, 0.5)[0], 128)
+        self.assertEqual(to_rgb8((1.0, 0.0, 0.0), 2.2, 0.5), (128, 0, 0))
+        self.assertEqual(to_rgb8((1.0, 1.0, 1.0), 2.2, 0.2), (51, 51, 51))
+        # gamma only bends mid-level values (fades, breathing, colour mixing)
+        self.assertLess(to_rgb8((0.5, 0.0, 0.0), 2.2, 1.0)[0], 128)
+        self.assertGreater(to_rgb8((0.1, 0.62, 1.0), 2.2, 0.2)[2], 40)   # Steam blue at 20 % stays visible
 
     def test_reorder(self):
         self.assertEqual(reorder((1, 2, 3), "GRB"), (2, 1, 3))

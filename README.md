@@ -143,7 +143,9 @@ default host/port `127.0.0.1:6742`, and install ledbar with
 | `journalctl --user -u ledbar -f` | live log |
 | `bash uninstall.sh` | remove it (keeps your config unless `--purge`) |
 
-To update: pull or copy the new folder and run `bash install.sh` again. Your config is kept.
+To update: pull or copy the new folder and run `bash install.sh` again. It stops the
+running service, replaces the files, keeps your config, and starts the service again,
+so there is never more than one copy running.
 
 ## Useful settings
 
@@ -172,6 +174,10 @@ warning_c = 90        # amber breathing above this temperature (0 = off)
   taken by another OpenRGB. `journalctl --user -u ledbar-openrgb -n 30` shows the actual error.
 - **`OpenRGB reports no devices`.** Run `bash install.sh --udev` if you skipped it (installs `/etc/udev/rules.d/60-ledbar-openrgb.rules`), then reboot once.
 - **`device ... has no 'Direct' mode`.** Your board's LED controller can't do per-LED animation safely (older ASRock boards with the SMBus controller). Any other OpenRGB-supported ARGB controller can drive the strip instead.
+- **`ledbar identify` / `ledbar demo` show nothing.** They pause the running service automatically
+  (it would otherwise overwrite the pattern). If the strip stays dark, try the other header:
+  `zone = "Addressable Header 2"` under `[openrgb]`, and check the strip's DIN is on the first LED
+  and the 5 V/GND pins are right.
 - **Wrong colours or backwards bar.** Re-run `ledbar identify` and fix `color_order` / `reverse` / `offset` in the config.
 - **Bar stays breathing.** It waits up to 90 s for Steam to start. Set `wait_for_steam = false` under `[boot]` if you don't start Steam at login.
 - **Nothing during a download.** `ledbar status` lists the manifests it sees. Libraries on other drives are found automatically; unusual locations go in `[steam] paths`.

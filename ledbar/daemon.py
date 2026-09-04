@@ -143,9 +143,16 @@ class Daemon:
         last_send_time = -1e9
         last_status = None
         last_scene = None
+        # The boot animation only makes sense once we can actually show it, so
+        # it (re)starts the first time the output becomes usable.
+        seen_output = self.backend.healthy
 
         while not self._stop:
             now = time.monotonic()
+            if not seen_output and self.backend.healthy:
+                seen_output = True
+                if cfg.boot.enabled:
+                    self.machine.restart_boot(now)
             if self.inputs.take_resume_event():
                 log.info("resumed from suspend; re-initialising output")
                 self.backend.resync()

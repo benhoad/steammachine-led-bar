@@ -78,17 +78,20 @@ def blend_frames(a: Sequence[RGB], b: Sequence[RGB], t: float) -> list[RGB]:
 
 
 def to_rgb8(color: RGB, gamma: float = 1.0, brightness: float = 1.0) -> RGB8:
-    """Convert floats to 0..255 ints applying brightness then gamma.
+    """Convert floats to 0..255 ints: gamma-correct the colour, then scale by brightness.
 
-    Brightness is applied *before* gamma so that ``brightness = 0.5`` really
-    looks half as bright to the eye rather than being crushed to a flicker.
+    Gamma shapes fades, breathing and colour mixing so they look even to the
+    eye.  Brightness is a plain linear scale of the final PWM value (the same
+    convention as OpenRGB and WLED), so ``brightness = 0.2`` gives 20 % of the
+    maximum drive level rather than being crushed to almost nothing.
     """
     out = []
+    factor = clamp01(brightness)
     for channel in color:
-        value = clamp01(channel) * clamp01(brightness)
+        value = clamp01(channel)
         if gamma and gamma != 1.0:
             value = value ** gamma
-        out.append(int(round(value * 255.0)))
+        out.append(int(round(value * factor * 255.0)))
     return (out[0], out[1], out[2])
 
 

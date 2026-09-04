@@ -56,7 +56,7 @@ class OpenRGBConfig:
     set_zone_size: bool = True      # resize the zone to leds.count + leds.offset
     require_direct: bool = True     # refuse devices without a "Direct" mode (protects flash memory)
     client_name: str = "ledbar"
-    reconnect_seconds: float = 3.0
+    reconnect_seconds: float = 1.0   # first retry delay; doubles up to 30 s
     command: str = ""               # OpenRGB binary/AppImage for the ledbar-openrgb service; "" = auto
 
 

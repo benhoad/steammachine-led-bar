@@ -60,6 +60,12 @@ if [ -r /etc/os-release ]; then
     OS_LIKE="$( . /etc/os-release && echo "${ID_LIKE:-}" )"
 fi
 
+# --- stop a running copy while we replace its files ---------------------------
+if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active --quiet ledbar.service 2>/dev/null; then
+    step "Stopping the running ledbar service for the upgrade"
+    systemctl --user stop ledbar.service || true
+fi
+
 # --- files -------------------------------------------------------------------
 step "Installing files to $APP_DIR"
 mkdir -p "$APP_DIR" "$CONFIG_DIR" "$UNIT_DIR" "$BIN_DIR"
@@ -74,6 +80,10 @@ echo "launcher: $BIN_DIR/ledbar"
 # --- python dependency (openrgb-python) --------------------------------------
 step "Installing openrgb-python $OPENRGB_PY_VERSION"
 installed=0
+if [ -e "$APP_DIR/venv/bin/python" ] && ! "$APP_DIR/venv/bin/python" -c 'import sys' >/dev/null 2>&1; then
+    echo "existing virtualenv no longer works (system Python changed?); recreating it"
+    rm -rf "$APP_DIR/venv"
+fi
 if [ ! -x "$APP_DIR/venv/bin/python" ]; then
     if "$PYTHON" -m venv "$APP_DIR/venv" >/dev/null 2>&1; then
         echo "created virtualenv $APP_DIR/venv"
