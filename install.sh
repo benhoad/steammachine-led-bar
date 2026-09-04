@@ -10,6 +10,9 @@
 #   ./install.sh --no-service   # copy files only
 #   ./install.sh --no-openrgb-service   # you run OpenRGB's SDK server yourself
 #   ./install.sh --boot         # also start at boot, before anyone logs in (enables lingering)
+#   ./install.sh --openrgb      # download the current OpenRGB release candidate AppImage into ~/Applications
+#                               # (Bazzite's ujust install-openrgb ships 1.0rc2, which cannot drive ASRock's
+#                               #  ARGB headers per LED; that was fixed in 1.0rc3)
 set -euo pipefail
 
 APP_DIR="${LEDBAR_APP_DIR:-$HOME/.local/share/ledbar}"
@@ -24,13 +27,15 @@ WITH_SERVICE=1
 WITH_OPENRGB_SERVICE=1
 WITH_UDEV=0
 WITH_BOOT=0
+WITH_OPENRGB_DL=0
 for arg in "$@"; do
     case "$arg" in
         --no-service) WITH_SERVICE=0 ;;
         --no-openrgb-service) WITH_OPENRGB_SERVICE=0 ;;
         --udev) WITH_UDEV=1 ;;
         --boot) WITH_BOOT=1 ;;
-        -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+        --openrgb) WITH_OPENRGB_DL=1 ;;
+        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -137,12 +142,77 @@ fi
 
 # --- OpenRGB -----------------------------------------------------------------
 step "OpenRGB"
-OPENRGB_APPIMAGE=""
-for candidate in "$HOME"/Applications/*OpenRGB*.AppImage "$HOME"/AppImages/*OpenRGB*.AppImage "$HOME"/.local/bin/*OpenRGB*.AppImage; do
-    if [ -x "$candidate" ]; then OPENRGB_APPIMAGE="$candidate"; break; fi
-done
-if [ -n "$OPENRGB_APPIMAGE" ]; then
+OPENRGB_FALLBACK_URL="https://codeberg.org/OpenRGB/OpenRGB/releases/download/release_candidate_1.0rc3.1/OpenRGB_1.0rc3.1_x86_64_5e81e26.AppImage"
+download_openrgb() {
+    local dir="$HOME/Applications" url name
+    mkdir -p "$dir"
+    url="$("$PYTHON" - <<'PY'
+import json, platform, urllib.request
+arch = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "arm64", "armv7l": "armhf", "i686": "i386"}.get(platform.machine(), "x86_64")
+
+def newest():
+    releases = json.load(urllib.request.urlopen("https://codeberg.org/api/v1/repos/OpenRGB/OpenRGB/releases?limit=5", timeout=20))
+    for release in releases:
+        for asset in release.get("assets", []):
+            if asset["name"].endswith(".AppImage") and f"_{arch}_" in asset["name"]:
+                return asset["browser_download_url"]
+    return ""
+
+try:
+    print(newest())
+except Exception:
+    print("")
+PY
+)"
+    [ -n "$url" ] || url="$OPENRGB_FALLBACK_URL"
+    name="$(basename "$url")"
+    if [ -s "$dir/$name" ]; then
+        echo "already downloaded: $dir/$name"
+    else
+        echo "downloading $url"
+        if command -v curl >/dev/null 2>&1; then
+            if [ -t 1 ]; then curl -fL --progress-bar -o "$dir/$name.part" "$url"; else curl -fsSL -o "$dir/$name.part" "$url"; fi
+        else
+            wget -q -O "$dir/$name.part" "$url"
+        fi
+        mv "$dir/$name.part" "$dir/$name"
+    fi
+    chmod +x "$dir/$name"
+    touch "$dir/$name"      # the newest AppImage wins in ledbar-openrgb-server's search
+    echo "OpenRGB AppImage ready: $dir/$name"
+}
+if [ "$WITH_OPENRGB_DL" = 1 ]; then
+    download_openrgb
+fi
+# same search as bin/ledbar-openrgb-server: any case, newest first (Gear Lever renames files)
+OPENRGB_APPIMAGE="$( (find "$HOME/Applications" "$HOME/AppImages" "$HOME/.local/bin" "$HOME/Apps" \
+                        -maxdepth 1 -type f -iname '*openrgb*.appimage' 2>/dev/null || true) \
+                    | while IFS= read -r f; do
+                          printf '%s\t%s\n' "$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)" "$f"
+                      done | sort -rn | head -1 | cut -f2-)"
+OPENRGB_COMMAND="$("$PYTHON" - "$CONFIG_DIR/config.toml" <<'PY'
+import sys
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+try:
+    with open(sys.argv[1], "rb") as handle:
+        print(tomllib.load(handle).get("openrgb", {}).get("command", "") or "")
+except Exception:
+    print("")
+PY
+)"
+if [ -n "$OPENRGB_COMMAND" ]; then
+    echo "using [openrgb] command from the config: $OPENRGB_COMMAND"
+elif [ -n "$OPENRGB_APPIMAGE" ]; then
     echo "found AppImage: $OPENRGB_APPIMAGE"
+    [ -x "$OPENRGB_APPIMAGE" ] || chmod +x "$OPENRGB_APPIMAGE" 2>/dev/null || true
+    case "$(basename "$OPENRGB_APPIMAGE")" in
+        *1.0rc1*|*1.0rc2*|*0.9*|*0.8*|*0.7*)
+            warn "this OpenRGB is older than 1.0rc3 and cannot drive ASRock's ARGB headers per LED;"
+            warn "run:  bash install.sh --openrgb   to download the current release candidate" ;;
+    esac
 elif command -v openrgb >/dev/null 2>&1; then
     echo "found openrgb: $(command -v openrgb)"
 elif command -v flatpak >/dev/null 2>&1 && flatpak info org.openrgb.OpenRGB >/dev/null 2>&1; then

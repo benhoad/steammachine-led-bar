@@ -18,28 +18,26 @@ Built for 24 WS2812B LEDs on an ASRock motherboard's 3-pin ARGB header.
 
 Each step is one command. Run them in a terminal (Konsole / Ptyxis) in Desktop Mode.
 
-**1. Install OpenRGB.**
-
-```bash
-ujust install-openrgb
-```
-
-A Gear Lever window opens: click **Unlock**, then **Move to the app menu**, then close it.
-
-**2. Put this folder on the PC.**
+**1. Put this folder on the PC.**
 
 ```bash
 git clone https://github.com/benhoad/steammachine-led-bar.git && cd steammachine-led-bar
 ```
 
-**3. Run the installer.**
+**2. Run the installer.**
 
 ```bash
-bash install.sh --udev
+bash install.sh --openrgb --udev
 ```
 
-It asks for your password once, to let OpenRGB open the LED controller without root.
-Everything else goes into your home folder. The LED bar starts at the end of this step.
+`--openrgb` downloads the current OpenRGB release candidate AppImage into `~/Applications`.
+This is needed: Bazzite's own `ujust install-openrgb` ships 1.0rc2, which cannot drive ASRock's
+ARGB headers per LED (fixed in 1.0rc3). `--udev` asks for your password once, to let OpenRGB open
+the LED controller without root. Everything else goes into your home folder. The LED bar starts
+at the end of this step.
+
+**3. Optional.** If you also want OpenRGB in the app menu, run `ujust install-openrgb` too;
+ledbar always uses the newest AppImage it finds.
 
 **4. Check that it found your board.**
 
@@ -108,7 +106,8 @@ or set `on_exit = "off"` under `[power]` in the config.
 Only step 1 is Bazzite-specific. ledbar itself is plain Python (3.10+) with systemd
 user services, and Steam is found whether it is native, Flatpak or Snap.
 
-1. Install OpenRGB **0.9 or newer** (older versions cannot drive ASRock's USB controller per LED):
+1. Install OpenRGB. For ASRock's USB controller you need **1.0rc3 or newer** (`bash install.sh --openrgb`
+   fetches it as an AppImage on any distro); other controllers work from 0.9:
    Arch / CachyOS / ChimeraOS `sudo pacman -S openrgb`, Fedora / Nobara `sudo dnf install openrgb`,
    openSUSE `sudo zypper install OpenRGB`, Ubuntu 24.04+ / Debian 13+ `sudo apt install openrgb`,
    anything else (including SteamOS) `flatpak install flathub org.openrgb.OpenRGB` or the
@@ -173,6 +172,10 @@ warning_c = 90        # amber breathing above this temperature (0 = off)
   it says whether it found OpenRGB, whether the AppImage runs (FUSE), and whether port 6742 is already
   taken by another OpenRGB. `journalctl --user -u ledbar-openrgb -n 30` shows the actual error.
 - **`OpenRGB reports no devices`.** Run `bash install.sh --udev` if you skipped it (installs `/etc/udev/rules.d/60-ledbar-openrgb.rules`), then reboot once.
+- **Static colours work in the OpenRGB app but Direct / `ledbar identify` show nothing.** OpenRGB is
+  older than 1.0rc3 (per-LED Direct mode on ASRock's USB controller was fixed in January 2026).
+  `bash install.sh --openrgb` downloads the current release candidate; then
+  `systemctl --user restart ledbar-openrgb ledbar`.
 - **`device ... has no 'Direct' mode`.** Your board's LED controller can't do per-LED animation safely (older ASRock boards with the SMBus controller). Any other OpenRGB-supported ARGB controller can drive the strip instead.
 - **`ledbar identify` / `ledbar demo` show nothing.** They pause the running service automatically
   (it would otherwise overwrite the pattern). If the strip stays dark, try the other header:

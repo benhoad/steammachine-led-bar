@@ -46,8 +46,8 @@ find_openrgb() {
     fi
     local found
     # AppImage: any case, newest first (Gear Lever may rename or move the file)
-    found="$(find "$HOME/Applications" "$HOME/AppImages" "$HOME/.local/bin" "$HOME/Apps" \
-                  -maxdepth 1 -type f -iname '*openrgb*.appimage' 2>/dev/null \
+    found="$( (find "$HOME/Applications" "$HOME/AppImages" "$HOME/.local/bin" "$HOME/Apps" \
+                  -maxdepth 1 -type f -iname '*openrgb*.appimage' 2>/dev/null || true) \
              | while IFS= read -r f; do
                    printf '%s\t%s\n' "$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)" "$f"
                done | sort -rn | head -1 | cut -f2-)"
@@ -114,7 +114,13 @@ case "$OPENRGB" in
             printf '%s\n' "$output" | tail -15 >&2
             exit 1
         fi
-        say "$(printf '%s\n' "$output" | grep -i -m1 'openrgb' || printf '%s' "$output" | tail -1)"
+        version_line="$(printf '%s\n' "$output" | grep -i -m1 'openrgb' || printf '%s' "$output" | tail -1)"
+        say "$version_line"
+        case "$version_line" in
+            *1.0rc1*|*1.0rc2*|*"OpenRGB 0."*)
+                say "WARNING: OpenRGB older than 1.0rc3 cannot drive ASRock Polychrome USB headers per LED"
+                say "         (Direct mode fix from January 2026). Run:  bash install.sh --openrgb" ;;
+        esac
         ;;
 esac
 
