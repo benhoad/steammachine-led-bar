@@ -121,6 +121,18 @@ Without systemd (Void, Alpine, Devuan, Gentoo/OpenRC) the installer copies the f
 cannot enable services: run `openrgb --server --noautoconnect` and `ledbar run` from your
 session's autostart instead.
 
+## What OpenRGB needs
+
+Nothing, in the default setup: the `ledbar-openrgb` service runs OpenRGB headless as an
+SDK server, and ledbar selects the device, switches it to Direct mode, sets the zone's
+LED count and streams the colours itself. Do not set zone sizes, modes or profiles in
+the OpenRGB app for the strip.
+
+If you run the OpenRGB app yourself instead, tick **Start server** (and optionally
+**Start at login** / **Start minimized**) in Settings → General Settings, keep the
+default host/port `127.0.0.1:6742`, and install ledbar with
+`bash install.sh --no-openrgb-service` so only one OpenRGB instance touches the controller.
+
 ## Everyday commands
 
 | Command | What it does |
@@ -155,6 +167,9 @@ warning_c = 90        # amber breathing above this temperature (0 = off)
 ## Problems
 
 - **`ledbar` command not found.** Log out and back in, or use `~/.local/share/ledbar/bin/ledbar`.
+- **`ledbar-openrgb` service failed (status=1).** Run `~/.local/share/ledbar/bin/ledbar-openrgb-server --check`:
+  it says whether it found OpenRGB, whether the AppImage runs (FUSE), and whether port 6742 is already
+  taken by another OpenRGB. `journalctl --user -u ledbar-openrgb -n 30` shows the actual error.
 - **`OpenRGB reports no devices`.** Run `bash install.sh --udev` if you skipped it (installs `/etc/udev/rules.d/60-ledbar-openrgb.rules`), then reboot once.
 - **`device ... has no 'Direct' mode`.** Your board's LED controller can't do per-LED animation safely (older ASRock boards with the SMBus controller). Any other OpenRGB-supported ARGB controller can drive the strip instead.
 - **Wrong colours or backwards bar.** Re-run `ledbar identify` and fix `color_order` / `reverse` / `offset` in the config.

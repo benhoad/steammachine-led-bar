@@ -7,8 +7,7 @@ Type=simple
 ExecStart=%h/.local/share/ledbar/bin/ledbar-openrgb-server
 Restart=on-failure
 RestartSec=5
-# OpenRGB runs headless with --server; the offscreen platform keeps Qt happy without a display.
-Environment=QT_QPA_PLATFORM=offscreen
+# Headless OpenRGB (--server without --gui) never creates a Qt window, so no display is needed.
 
 [Install]
 WantedBy=default.target

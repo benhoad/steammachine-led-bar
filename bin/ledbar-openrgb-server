@@ -1,20 +1,31 @@
 #!/usr/bin/env bash
 # Starts OpenRGB as a headless SDK server (no GUI) for ledbar.
 #
+#   ledbar-openrgb-server            # used by ledbar-openrgb.service
+#   ledbar-openrgb-server --check    # explain what would happen, without starting anything
+#
 # The OpenRGB program is taken from [openrgb] command in the ledbar config,
 # otherwise the AppImage installed by `ujust install-openrgb` (or a system
 # openrgb / the Flatpak) is used.
 set -u
 CONFIG="${LEDBAR_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/ledbar/config.toml}"
+CHECK=0
+[ "${1:-}" = "--check" ] && { CHECK=1; shift; }
+
+say() { echo "ledbar-openrgb-server: $*" >&2; }
 
 read_config() {
     python3 - "$CONFIG" <<'PY'
-import shlex, sys, tomllib
+import shlex, sys
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
 data = {}
 try:
     with open(sys.argv[1], "rb") as handle:
         data = tomllib.load(handle)
-except (OSError, tomllib.TOMLDecodeError):
+except Exception:
     pass
 section = data.get("openrgb", {}) if isinstance(data, dict) else {}
 print("COMMAND=" + shlex.quote(str(section.get("command", "") or "")))
@@ -27,24 +38,30 @@ COMMAND="${COMMAND:-}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-6742}"
 
+# --- locate OpenRGB ----------------------------------------------------------
 find_openrgb() {
-    if [ -n "${COMMAND:-}" ]; then
+    if [ -n "$COMMAND" ]; then
         printf '%s\n' "$COMMAND"
         return 0
     fi
+    local found
+    # AppImage: any case, newest first (Gear Lever may rename or move the file)
+    found="$(find "$HOME/Applications" "$HOME/AppImages" "$HOME/.local/bin" "$HOME/Apps" \
+                  -maxdepth 1 -type f -iname '*openrgb*.appimage' 2>/dev/null \
+             | while IFS= read -r f; do
+                   printf '%s\t%s\n' "$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)" "$f"
+               done | sort -rn | head -1 | cut -f2-)"
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found"
+        return 0
+    fi
     local candidate
-    for candidate in "$HOME"/Applications/*OpenRGB*.AppImage "$HOME"/Applications/*openrgb*.AppImage \
-                     "$HOME"/AppImages/*OpenRGB*.AppImage "$HOME"/.local/bin/*OpenRGB*.AppImage \
-                     "$HOME"/.local/bin/openrgb /usr/bin/openrgb /usr/local/bin/openrgb; do
-        if [ -x "$candidate" ]; then
-            printf '%s\n' "$candidate"
+    for candidate in openrgb OpenRGB; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            command -v "$candidate"
             return 0
         fi
     done
-    if command -v openrgb >/dev/null 2>&1; then
-        command -v openrgb
-        return 0
-    fi
     if command -v flatpak >/dev/null 2>&1 && flatpak info org.openrgb.OpenRGB >/dev/null 2>&1; then
         printf '%s\n' "flatpak run org.openrgb.OpenRGB"
         return 0
@@ -53,20 +70,60 @@ find_openrgb() {
 }
 
 if ! OPENRGB="$(find_openrgb)"; then
-    echo "ledbar-openrgb-server: OpenRGB not found. Install it with 'ujust install-openrgb'" >&2
-    echo "or set [openrgb] command = \"/path/to/OpenRGB.AppImage\" in $CONFIG" >&2
+    say "OpenRGB not found."
+    say "  Bazzite: ujust install-openrgb   |  other distros: install the openrgb package or the Flatpak"
+    say "  or set [openrgb] command = \"/path/to/OpenRGB.AppImage\" in $CONFIG"
     exit 1
 fi
-
-# AppImages need FUSE; fall back to extracting when /dev/fuse is unavailable.
 case "$OPENRGB" in
-    *.AppImage|*.appimage)
-        if [ ! -e /dev/fuse ]; then
+    /*) if [ ! -x "$OPENRGB" ]; then
+            say "$OPENRGB is not executable; fixing with chmod +x"
+            chmod +x "$OPENRGB" 2>/dev/null || true
+        fi ;;
+esac
+say "using: $OPENRGB"
+
+# --- is a server already listening? -----------------------------------------
+if command -v ss >/dev/null 2>&1; then
+    listener="$(ss -H -ltnp "sport = :$PORT" 2>/dev/null | head -1)"
+    if [ -n "$listener" ]; then
+        say "something already listens on port $PORT: $listener"
+        say "ledbar will use that server; this unit has nothing to do (disable it with:"
+        say "  systemctl --user disable --now ledbar-openrgb   if you run OpenRGB's SDK server yourself)"
+        exit 0
+    fi
+fi
+
+# --- make sure the program actually runs (AppImage + FUSE problems) ----------
+TIMEOUT=""
+command -v timeout >/dev/null 2>&1 && TIMEOUT="timeout 30"
+probe() {
+    # shellcheck disable=SC2086
+    $TIMEOUT env "$@" $OPENRGB --version 2>&1
+}
+case "$OPENRGB" in
+    *.AppImage|*.appimage|*.APPIMAGE)
+        output="$(probe)"; rc=$?
+        if [ $rc -ne 0 ] && printf '%s' "$output" | grep -qi "fuse\|dlopen\|mount"; then
+            say "AppImage could not be mounted with FUSE; extracting it at start instead (slower start)"
             export APPIMAGE_EXTRACT_AND_RUN=1
+            output="$(probe APPIMAGE_EXTRACT_AND_RUN=1)"; rc=$?
         fi
+        if [ $rc -ne 0 ]; then
+            say "$OPENRGB --version failed (exit $rc):"
+            printf '%s\n' "$output" | tail -15 >&2
+            exit 1
+        fi
+        say "$(printf '%s\n' "$output" | grep -i -m1 'openrgb' || printf '%s' "$output" | tail -1)"
         ;;
 esac
 
-echo "ledbar-openrgb-server: starting $OPENRGB --server on $HOST:$PORT" >&2
+# --- go ------------------------------------------------------------------------
+if [ "$CHECK" = 1 ]; then
+    say "would run: $OPENRGB --server --noautoconnect --server-host $HOST --server-port $PORT"
+    say "check looks good. Start it with:  systemctl --user restart ledbar-openrgb"
+    exit 0
+fi
+say "starting $OPENRGB --server on $HOST:$PORT"
 # shellcheck disable=SC2086  # $OPENRGB may legitimately contain "flatpak run ..."
 exec $OPENRGB --server --noautoconnect --server-host "$HOST" --server-port "$PORT" "$@"
