@@ -29,10 +29,8 @@ A Gear Lever window opens: click **Unlock**, then **Move to the app menu**, then
 **2. Put this folder on the PC.**
 
 ```bash
-git clone https://github.com/<your-name>/bazzite-led-bar.git && cd bazzite-led-bar
+git clone https://github.com/benhoad/steammachine-led-bar.git && cd steammachine-led-bar
 ```
-
-No git? Copy the folder over with a USB stick or `scp`, then `cd` into it.
 
 **3. Run the installer.**
 
