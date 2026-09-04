@@ -12,7 +12,9 @@ Makes the LED strip in your PC behave like the light bar on a Steam Machine:
 | Asleep or shut down | off |
 
 Works on Bazzite with any LED strip that OpenRGB can control in "Direct" mode.
-Built for 24 WS2812B LEDs on an ASRock motherboard's 3-pin ARGB header.
+Built for 24 WS2812B LEDs on an ASRock motherboard's 3-pin ARGB header. If your
+board can't do per-LED through OpenRGB, there is a whole-strip "basic" mode and a
+guide for adding a small dedicated controller ([docs/CONTROLLERS.md](docs/CONTROLLERS.md)).
 
 ## Install on Bazzite
 
@@ -38,6 +40,13 @@ at the end of this step.
 
 **3. Optional.** If you also want OpenRGB in the app menu, run `ujust install-openrgb` too;
 ledbar always uses the newest AppImage it finds.
+
+> **If the strip flashes and won't hold a colour** (some ASRock boards can't do
+> per-LED through OpenRGB, even in the OpenRGB app), re-run the installer with
+> `bash install.sh --basic`. That switches to **whole-strip mode**: solid and
+> breathing hardware effects per state, no progress fill. To keep the real
+> left-to-right progress bar, add a small dedicated LED controller instead, see
+> [docs/CONTROLLERS.md](docs/CONTROLLERS.md).
 
 **4. Check that it found your board.**
 
@@ -172,15 +181,21 @@ warning_c = 90        # amber breathing above this temperature (0 = off)
   it says whether it found OpenRGB, whether the AppImage runs (FUSE), and whether port 6742 is already
   taken by another OpenRGB. `journalctl --user -u ledbar-openrgb -n 30` shows the actual error.
 - **`OpenRGB reports no devices`.** Run `bash install.sh --udev` if you skipped it (installs `/etc/udev/rules.d/60-ledbar-openrgb.rules`), then reboot once.
-- **Static colours work in the OpenRGB app but Direct / `ledbar identify` show nothing.** OpenRGB is
-  older than 1.0rc3 (per-LED Direct mode on ASRock's USB controller was fixed in January 2026).
-  `bash install.sh --openrgb` downloads the current release candidate; then
-  `systemctl --user restart ledbar-openrgb ledbar`.
+- **Static colours work in the OpenRGB app but Direct / `ledbar identify` show nothing.** First make sure
+  OpenRGB is 1.0rc3 or newer (`bash install.sh --openrgb`; the January 2026 fix). If it still flashes and
+  reverts to a static colour, your board can't do per-LED through OpenRGB (some ASRock Polychrome USB
+  boards, e.g. the B650I Lightning WiFi). Two choices: `bash install.sh --basic` for whole-strip mode
+  (effects only, no fill), or add a dedicated controller for the full progress bar,
+  [docs/CONTROLLERS.md](docs/CONTROLLERS.md).
 - **`device ... has no 'Direct' mode`.** Your board's LED controller can't do per-LED animation safely (older ASRock boards with the SMBus controller). Any other OpenRGB-supported ARGB controller can drive the strip instead.
 - **`ledbar identify` / `ledbar demo` show nothing.** They pause the running service automatically
   (it would otherwise overwrite the pattern). If the strip stays dark, try the other header:
   `zone = "Addressable Header 2"` under `[openrgb]`, and check the strip's DIN is on the first LED
   and the 5 V/GND pins are right.
+- **The strip keeps flipping back to a colour you set in the OpenRGB app.** The controller falls back
+  to its stored effect whenever ledbar stops sending frames. Make sure `keepalive_seconds` under
+  `[leds]` is `0.25` (older configs had `2.0`), and that no second OpenRGB with hardware access is
+  running (`pgrep -af -i openrgb` should list only the `ledbar-openrgb` service).
 - **Wrong colours or backwards bar.** Re-run `ledbar identify` and fix `color_order` / `reverse` / `offset` in the config.
 - **Bar stays breathing.** It waits up to 90 s for Steam to start. Set `wait_for_steam = false` under `[boot]` if you don't start Steam at login.
 - **Nothing during a download.** `ledbar status` lists the manifests it sees. Libraries on other drives are found automatically; unusual locations go in `[steam] paths`.

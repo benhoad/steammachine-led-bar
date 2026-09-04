@@ -20,7 +20,7 @@ import re
 import time
 from typing import Any, Optional
 
-from ..colors import RGB8
+from ..colors import RGB, RGB8, clamp01, lerp, reorder, scale, to_rgb8
 from ..config import OpenRGBConfig
 from .base import Backend, BackendError
 
@@ -139,6 +139,14 @@ class OpenRGBBackend(Backend):
         device = client.devices[self.device_index]
 
         # 2. Zone size ----------------------------------------------------------
+        device, zone = self._ensure_zone_size(client, device)
+        self.device = device
+        self.zone = zone
+        self.start_index = zone.leds[0].id
+        self._device_colors = [self._RGBColor(c.red, c.green, c.blue) for c in device.colors]
+
+    def _ensure_zone_size(self, client: Any, device: Any) -> tuple[Any, Any]:
+        """Resize the selected zone to ``total`` LEDs and validate it."""
         zone = device.zones[self.zone_index]
         if self.cfg.set_zone_size and len(zone.leds) != self.total:
             zone_data = device.data.zones[self.zone_index]
@@ -163,11 +171,7 @@ class OpenRGBBackend(Backend):
             )
         if not zone.leds:
             raise BackendError(f"zone '{zone.name}' has no LEDs")
-
-        self.device = device
-        self.zone = zone
-        self.start_index = zone.leds[0].id
-        self._device_colors = [self._RGBColor(c.red, c.green, c.blue) for c in device.colors]
+        return device, zone
 
     # -- selection ---------------------------------------------------------
 
@@ -308,6 +312,149 @@ class OpenRGBBackend(Backend):
         return (
             f"OpenRGB device {self.device_index} '{self.device.name}', zone {self.zone_index} "
             f"'{self.zone.name}' ({len(self.zone.leds)} LEDs, mode {self.direct_mode_name or 'custom'})"
+        )
+
+
+# The controller's own hardware effects we map ledbar states onto, in order of
+# preference.  All ASRock Polychrome USB boards have Static; the rest are used
+# when present and fall back to Static.
+_EFFECT_CANDIDATES = {
+    "static": ["Static", "Direct"],
+    "breathe": ["Breathing", "Breath", "Static"],
+    "strobe": ["Strobe", "Flashing", "Blink", "Breathing", "Static"],
+    "off": ["Off"],
+}
+
+
+class OpenRGBModeBackend(OpenRGBBackend):
+    """"Basic" whole-strip output for controllers without a usable Direct mode.
+
+    Instead of streaming per-LED frames, it maps each ledbar state onto one of
+    the controller's built-in hardware effects (solid, breathing, ...) and a
+    single colour, and only writes when that changes.  There is no progress
+    fill, but it is rock solid on boards where Direct mode flashes (many ASRock
+    Polychrome USB motherboards).
+    """
+
+    name = "openrgb-basic"
+    mode_based = True
+
+    def __init__(self, cfg: OpenRGBConfig, total: int, brightness: float = 1.0, color_order: str = "RGB") -> None:
+        super().__init__(cfg, total)
+        self.brightness = clamp01(brightness)
+        self.color_order = color_order.upper()
+        self._mode_names: dict[str, str] = {}
+        self._active_mode: str = ""
+        self._last_target: tuple = ()
+
+    # -- preparation -------------------------------------------------------
+
+    def _prepare(self, client: Any, device: Any) -> None:
+        available = {m.name.lower(): m.name for m in device.modes}
+        if "static" not in available and "direct" not in available:
+            raise BackendError(
+                f"device '{device.name}' has no Static mode; whole-strip (basic) mode needs one "
+                f"(modes: {', '.join(m.name for m in device.modes)})."
+            )
+        self._mode_names = available
+        device, zone = self._ensure_zone_size(client, device)
+        self.device = device
+        self.zone = zone
+        self.start_index = zone.leds[0].id
+        self._device_colors = [self._RGBColor(c.red, c.green, c.blue) for c in device.colors]
+        self._active_mode = ""
+        self._last_target = ()
+
+    def _mode_for(self, key: str) -> str:
+        for candidate in _EFFECT_CANDIDATES.get(key, ["Static"]):
+            actual = self._mode_names.get(candidate.lower())
+            if actual:
+                return actual
+        return self._mode_names.get("static") or next(iter(self._mode_names.values()))
+
+    # -- state -> (effect, colour) ----------------------------------------
+
+    def _target(self, decision: Any) -> tuple[str, RGB]:
+        scene = decision.scene
+        kind = scene.kind
+        level = clamp01(getattr(scene, "level", 1.0))
+        color = getattr(scene, "color", (0.0, 0.0, 0.0))
+        if kind == "off" or level <= 0.0:
+            return "off", (0.0, 0.0, 0.0)
+        if kind == "solid":
+            return "static", scale(color, level)
+        if kind == "pulse":
+            return "static", color
+        if kind in ("breathe", "segment_breathe"):
+            # faults lose their segment but keep the breathing error colour
+            return "breathe", scale(color, level)
+        if kind == "blink":
+            return "strobe", scale(color, level)
+        if kind == "fill":
+            # no per-LED fill available: show "busy" as a breathing bar
+            return "breathe", scale(color, level)
+        if kind == "gauge":
+            hot = getattr(scene, "color2", None) or color
+            fraction = clamp01(getattr(scene, "fraction", 0.0) or 0.0)
+            return "static", scale(lerp(color, hot, fraction), level)
+        return "static", scale(color, level)
+
+    # -- output ------------------------------------------------------------
+
+    def write(self, frame: list[RGB8]) -> bool:  # pragma: no cover - never used
+        return self._connected
+
+    def apply_decision(self, decision: Any, now: float) -> bool:
+        if not self._connected:
+            import time as _time
+
+            if _time.monotonic() < self._next_attempt:
+                return False
+            try:
+                self._connect()
+            except BackendError:
+                raise
+            except Exception as exc:
+                self._note_failure(f"cannot connect to OpenRGB at {self.cfg.host}:{self.cfg.port}: {exc}")
+                return False
+
+        key, rgb = self._target(decision)
+        rgb8 = to_rgb8(rgb, gamma=1.0, brightness=self.brightness)
+        if self.color_order != "RGB":
+            rgb8 = reorder(rgb8, self.color_order)
+        target = (key, rgb8)
+        if target == self._last_target:
+            return True
+        try:
+            mode_name = "Off" if (key == "off" and "off" in self._mode_names) else self._mode_for(key)
+            if mode_name != self._active_mode:
+                self.device.set_mode(mode_name)
+                self.device = self.client.devices[self.device_index]
+                self._active_mode = mode_name
+                self._device_colors = [self._RGBColor(c.red, c.green, c.blue) for c in self.device.colors]
+            if not (key == "off" and mode_name == "Off"):
+                colors = self._device_colors
+                RGBColor = self._RGBColor
+                for offset in range(self.total):
+                    colors[self.start_index + offset] = RGBColor(*rgb8)
+                self.device.set_colors(colors, fast=True)
+            self._last_target = target
+            return True
+        except Exception as exc:
+            self._note_failure(f"lost connection to OpenRGB: {exc}")
+            return False
+
+    def resync(self) -> None:
+        super().resync()
+        self._active_mode = ""
+        self._last_target = ()
+
+    def describe(self) -> str:
+        if self.device is None or self.zone is None:
+            return f"OpenRGB (basic/whole-strip) at {self.cfg.host}:{self.cfg.port} (not connected)"
+        return (
+            f"OpenRGB (basic/whole-strip) device {self.device_index} '{self.device.name}', "
+            f"zone {self.zone_index} '{self.zone.name}' ({len(self.zone.leds)} LEDs, hardware effects)"
         )
 
 

@@ -35,7 +35,8 @@ class LedsConfig:
     gamma: float = 2.2              # perceptual correction; 1.0 disables
     color_order: str = "RGB"        # swap channels if colours come out wrong
     fps: int = 30                   # frames per second sent to the controller
-    keepalive_seconds: float = 2.0  # resend an unchanged frame at least this often
+    keepalive_seconds: float = 0.25 # resend an unchanged frame at least this often (some controllers,
+                                    # ASRock's included, fall back to their built-in effect when frames stop)
 
     @property
     def total(self) -> int:
@@ -55,6 +56,9 @@ class OpenRGBConfig:
     zone: str = ""                  # zone name substring or index; "" = first addressable zone
     set_zone_size: bool = True      # resize the zone to leds.count + leds.offset
     require_direct: bool = True     # refuse devices without a "Direct" mode (protects flash memory)
+    whole_strip: bool = False       # "basic" mode: drive the whole bar with the controller's own
+                                    # hardware effects (Static/Breathing) instead of per-LED. Use this
+                                    # when Direct mode does not work on your board (no progress fill).
     client_name: str = "ledbar"
     reconnect_seconds: float = 1.0   # first retry delay; doubles up to 30 s
     command: str = ""               # OpenRGB binary/AppImage for the ledbar-openrgb service; "" = auto

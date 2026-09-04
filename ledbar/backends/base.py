@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from ..colors import RGB8
 
@@ -20,6 +20,11 @@ class Backend:
 
     name = "base"
 
+    # When True the daemon calls ``apply_decision`` with the current state
+    # instead of streaming per-LED frames through ``write``.  Used by backends
+    # that can only drive the whole strip via hardware effects.
+    mode_based = False
+
     def __init__(self, total: int) -> None:
         self.total = total
 
@@ -27,6 +32,14 @@ class Backend:
         pass
 
     def write(self, frame: list[RGB8]) -> bool:
+        raise NotImplementedError
+
+    def apply_decision(self, decision: Any, now: float) -> bool:
+        """Whole-strip backends: apply the current state (a state.Decision).
+
+        Only called when ``mode_based`` is True.  Returns True when the state
+        reached the hardware.
+        """
         raise NotImplementedError
 
     def resync(self) -> None:

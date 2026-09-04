@@ -63,3 +63,24 @@ Layout: `ledbar/steam.py` (manifests, libraries, processes), `sensors.py`
 `render.py` (patterns, crossfades, physical mapping), `backends/` (OpenRGB,
 terminal, null), `daemon.py` (loop), `cli.py`.
 
+## Basic (whole-strip) mode
+
+Some controllers (notably ASRock Polychrome USB motherboard headers) cannot
+stream per-LED through OpenRGB's Direct mode; the strip flashes and reverts to a
+saved effect. For those, `[openrgb] whole_strip = true` (or `install.sh --basic`)
+switches ledbar to drive the whole bar with the controller's own hardware effects
+instead of per-LED frames:
+
+| ledbar state | hardware effect |
+|---|---|
+| idle, on-and-ready | Static, bar colour |
+| booting, downloading/installing | Breathing, bar colour |
+| overheating | Static, red |
+| fault | Breathing, red (no per-quadrant segment) |
+| sleep / off | Off |
+
+There is no progress fill (the bar can't show a percentage), and the fault
+patterns lose their quadrant, but it is completely stable because it uses only
+the modes the controller supports natively, and it writes only when the state
+changes. To keep the true progress bar, use a dedicated controller
+(docs/CONTROLLERS.md).

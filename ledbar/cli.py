@@ -151,7 +151,33 @@ def cmd_identify(args: argparse.Namespace) -> int:
     off = [(0, 0, 0)] * total
 
     with _service_paused(backend.name):
+        if getattr(backend, "mode_based", False):
+            return _identify_basic(backend, config)
         return _identify_sequence(backend, config, total, red, green, blue, white, bar, off)
+
+
+def _identify_basic(backend, config) -> int:
+    """Whole-strip mode has no per-LED control; just confirm colours and the strip."""
+    import time as _time
+
+    from .render import Scene
+    from .state import Decision
+
+    backend.open()
+    if not backend.healthy:
+        print("Could not connect to OpenRGB; see the messages above and `ledbar status`.")
+        return 3
+    print(f"Output: {backend.describe()}")
+    print("Basic (whole-strip) mode: no per-LED control, so `reverse` and `offset` do not apply.")
+    print("The whole bar turns RED, then GREEN, then BLUE. If a colour is wrong, fix [leds] color_order.")
+    for name, rgb in (("red", (1.0, 0.0, 0.0)), ("green", (0.0, 1.0, 0.0)), ("blue", (0.0, 0.0, 1.0))):
+        backend.apply_decision(Decision(Scene(kind="solid", name=f"id-{name}", color=rgb)), _time.monotonic())
+        _sleep(2.5)
+    print("Finally, the bar colour from your config.")
+    backend.apply_decision(Decision(Scene(kind="solid", name="id-bar", color=config.rgb("bar"))), _time.monotonic())
+    _sleep(3.0)
+    backend.close(None, "off")
+    return 0
 
 
 def _identify_sequence(backend, config, total, red, green, blue, white, bar, off) -> int:

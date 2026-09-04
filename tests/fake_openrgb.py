@@ -221,3 +221,20 @@ def asrock_like() -> FakeDevice:
 
 def keyboard_like() -> FakeDevice:
     return FakeDevice("Fake Keyboard", [FakeZone("Keyboard", 104, 104, 104)], ["Static"], DeviceType.KEYBOARD)
+
+
+def asrock_no_direct() -> FakeDevice:
+    """An ASRock-style board whose Direct mode does not work: only effects present."""
+    return FakeDevice(
+        "ASRock B650I Lightning WiFi",
+        [FakeZone("Addressable Header 1", 0, 100, 0), FakeZone("Addressable Header 2", 0, 100, 2)],
+        ["Off", "Static", "Breathing", "Strobe"],
+    )
+
+
+def static_only() -> FakeDevice:
+    return FakeDevice(
+        "Minimal Board",
+        [FakeZone("Addressable Header 1", 0, 100, 0)],
+        ["Off", "Static"],
+    )

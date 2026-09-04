@@ -162,10 +162,6 @@ class Daemon:
             inputs = self.inputs.poll(now)
             decision = self.machine.update(inputs)
             scene = decision.scene
-            instant = scene.name in ("sleep", "shutdown") and last_scene not in ("sleep", "shutdown")
-            self.compositor.set_scene(scene, now, decision.fill_key, instant=instant)
-            frame = self.compositor.render(now)
-            physical = self.shaper.shape(frame)
 
             if decision.status != last_status:
                 log.info("state: %s", decision.status)
@@ -173,11 +169,21 @@ class Daemon:
                 last_status = decision.status
             last_scene = scene.name
 
-            if physical != self.last_sent or now - last_send_time >= cfg.leds.keepalive_seconds:
-                if self.backend.write(physical):
-                    self.last_sent = physical
-                    last_send_time = now
+            if self.backend.mode_based:
+                # whole-strip backends map the state onto a hardware effect and
+                # only write when it changes, so there is no per-frame rendering.
+                if self.backend.apply_decision(decision, now):
                     self.frames_sent += 1
+            else:
+                instant = scene.name in ("sleep", "shutdown") and last_scene not in ("sleep", "shutdown")
+                self.compositor.set_scene(scene, now, decision.fill_key, instant=instant)
+                frame = self.compositor.render(now)
+                physical = self.shaper.shape(frame)
+                if physical != self.last_sent or now - last_send_time >= cfg.leds.keepalive_seconds:
+                    if self.backend.write(physical):
+                        self.last_sent = physical
+                        last_send_time = now
+                        self.frames_sent += 1
 
             if max_seconds is not None and now - start >= max_seconds:
                 break

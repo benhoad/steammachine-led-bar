@@ -16,7 +16,8 @@ brightness = 60       # maximum brightness, 0-100 %
 gamma = 2.2           # makes fades/breathing look even to the eye; does not affect max brightness
 color_order = "RGB"   # if red/green/blue come out wrong: "GRB", "BRG", "RBG", "GBR", "BGR"
 fps = 30              # animation frame rate sent to the controller (10-60 is sensible)
-keepalive_seconds = 2.0  # resend an unchanged frame at least this often
+keepalive_seconds = 0.25 # resend an unchanged frame at least this often. Keep this small:
+                      # ASRock's controller reverts to its stored effect when frames stop arriving
 
 [output]
 backend = "openrgb"   # "openrgb" = real hardware, "terminal" = simulate in the terminal, "null" = nothing
@@ -30,6 +31,9 @@ zone = ""             # zone name substring or index; "" = first addressable zon
                       # (e.g. "Addressable Header 1")
 set_zone_size = true  # resize the zone so the controller drives exactly count + offset LEDs
 require_direct = true # refuse devices without a "Direct" mode (other modes write to flash!)
+whole_strip = false   # "basic" mode: if Direct mode does not work on your board (the strip flashes),
+                      # set true to drive the whole bar with the controller's own Static/Breathing
+                      # effects instead. No progress fill, but rock solid. (install.sh --basic sets this.)
 command = ""          # OpenRGB program for the ledbar-openrgb service; "" = auto-detect the AppImage
                       # e.g. "/home/you/Applications/OpenRGB_1.0rc2_x86_64_0fca93e.AppImage"
 

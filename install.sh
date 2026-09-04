@@ -10,6 +10,8 @@
 #   ./install.sh --no-service   # copy files only
 #   ./install.sh --no-openrgb-service   # you run OpenRGB's SDK server yourself
 #   ./install.sh --boot         # also start at boot, before anyone logs in (enables lingering)
+#   ./install.sh --basic        # 'basic' whole-strip mode: use the controller's own Static/Breathing
+#                               #  effects instead of per-LED (for boards where Direct mode flashes)
 #   ./install.sh --openrgb      # download the current OpenRGB release candidate AppImage into ~/Applications
 #                               # (Bazzite's ujust install-openrgb ships 1.0rc2, which cannot drive ASRock's
 #                               #  ARGB headers per LED; that was fixed in 1.0rc3)
@@ -28,6 +30,7 @@ WITH_OPENRGB_SERVICE=1
 WITH_UDEV=0
 WITH_BOOT=0
 WITH_OPENRGB_DL=0
+WITH_BASIC=0
 for arg in "$@"; do
     case "$arg" in
         --no-service) WITH_SERVICE=0 ;;
@@ -35,7 +38,8 @@ for arg in "$@"; do
         --udev) WITH_UDEV=1 ;;
         --boot) WITH_BOOT=1 ;;
         --openrgb) WITH_OPENRGB_DL=1 ;;
-        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+        --basic) WITH_BASIC=1 ;;
+        -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -137,6 +141,22 @@ if [ -f "$CONFIG_DIR/config.toml" ]; then
 else
     cp "$HERE/ledbar/config.example.toml" "$CONFIG_DIR/config.toml"
     echo "created $CONFIG_DIR/config.toml (edit count / reverse / brightness to match your bar)"
+fi
+if [ "$WITH_BASIC" = 1 ]; then
+    "$PYTHON" - "$CONFIG_DIR/config.toml" <<'PY'
+import re, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+if re.search(r"(?m)^\s*whole_strip\s*=", text):
+    text = re.sub(r"(?m)^(\s*whole_strip\s*=\s*)\w+", r"\1true", text)
+elif re.search(r"(?m)^\[openrgb\]\s*$", text):
+    text = re.sub(r"(?m)^(\[openrgb\]\s*)$", r"\1\nwhole_strip = true", text, count=1)
+else:
+    text = text.rstrip() + "\n\n[openrgb]\nwhole_strip = true\n"
+path.write_text(text, encoding="utf-8")
+print("enabled basic (whole-strip) mode in", path)
+PY
 fi
 "$APP_DIR/bin/ledbar" config check || true
 
