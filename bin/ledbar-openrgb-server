@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Starts OpenRGB as a headless SDK server (no GUI) for ledbar.
+#
+# The OpenRGB program is taken from [openrgb] command in the ledbar config,
+# otherwise the AppImage installed by `ujust install-openrgb` (or a system
+# openrgb / the Flatpak) is used.
+set -u
+CONFIG="${LEDBAR_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/ledbar/config.toml}"
+
+read_config() {
+    python3 - "$CONFIG" <<'PY'
+import shlex, sys, tomllib
+data = {}
+try:
+    with open(sys.argv[1], "rb") as handle:
+        data = tomllib.load(handle)
+except (OSError, tomllib.TOMLDecodeError):
+    pass
+section = data.get("openrgb", {}) if isinstance(data, dict) else {}
+print("COMMAND=" + shlex.quote(str(section.get("command", "") or "")))
+print("HOST=" + shlex.quote(str(section.get("host", "127.0.0.1") or "127.0.0.1")))
+print("PORT=" + shlex.quote(str(section.get("port", 6742) or 6742)))
+PY
+}
+eval "$(read_config)" || true
+COMMAND="${COMMAND:-}"
+HOST="${HOST:-127.0.0.1}"
+PORT="${PORT:-6742}"
+
+find_openrgb() {
+    if [ -n "${COMMAND:-}" ]; then
+        printf '%s\n' "$COMMAND"
+        return 0
+    fi
+    local candidate
+    for candidate in "$HOME"/Applications/*OpenRGB*.AppImage "$HOME"/Applications/*openrgb*.AppImage \
+                     "$HOME"/AppImages/*OpenRGB*.AppImage "$HOME"/.local/bin/*OpenRGB*.AppImage \
+                     "$HOME"/.local/bin/openrgb /usr/bin/openrgb /usr/local/bin/openrgb; do
+        if [ -x "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    if command -v openrgb >/dev/null 2>&1; then
+        command -v openrgb
+        return 0
+    fi
+    if command -v flatpak >/dev/null 2>&1 && flatpak info org.openrgb.OpenRGB >/dev/null 2>&1; then
+        printf '%s\n' "flatpak run org.openrgb.OpenRGB"
+        return 0
+    fi
+    return 1
+}
+
+if ! OPENRGB="$(find_openrgb)"; then
+    echo "ledbar-openrgb-server: OpenRGB not found. Install it with 'ujust install-openrgb'" >&2
+    echo "or set [openrgb] command = \"/path/to/OpenRGB.AppImage\" in $CONFIG" >&2
+    exit 1
+fi
+
+# AppImages need FUSE; fall back to extracting when /dev/fuse is unavailable.
+case "$OPENRGB" in
+    *.AppImage|*.appimage)
+        if [ ! -e /dev/fuse ]; then
+            export APPIMAGE_EXTRACT_AND_RUN=1
+        fi
+        ;;
+esac
+
+echo "ledbar-openrgb-server: starting $OPENRGB --server on $HOST:$PORT" >&2
+# shellcheck disable=SC2086  # $OPENRGB may legitimately contain "flatpak run ..."
+exec $OPENRGB --server --noautoconnect --server-host "$HOST" --server-port "$PORT" "$@"

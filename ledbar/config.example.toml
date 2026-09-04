@@ -1,0 +1,121 @@
+# ledbar configuration
+# Location: ~/.config/ledbar/config.toml
+#
+# Every option below is optional; the values shown are the defaults unless
+# a comment says otherwise. Colours are hex strings like "#1a9fff".
+# After editing, restart the service:  systemctl --user restart ledbar
+
+log_level = "info"    # debug | info | warning | error
+
+[leds]
+count = 24            # LEDs that make up the bar (3 x WS2812B-8 = 24)
+reverse = false       # true if the FIRST LED of the chain is at the RIGHT end of the bar.
+                      # The bar always fills from left to right; "reverse" flips the mapping.
+offset = 0            # LEDs at the start of the chain that are not part of the bar (hidden/skipped)
+brightness = 60       # maximum brightness, 0-100 %
+gamma = 2.2           # perceptual correction for dimming/fades; 1.0 = linear
+color_order = "RGB"   # if red/green/blue come out wrong: "GRB", "BRG", "RBG", "GBR", "BGR"
+fps = 30              # animation frame rate sent to the controller (10-60 is sensible)
+keepalive_seconds = 2.0  # resend an unchanged frame at least this often
+
+[output]
+backend = "openrgb"   # "openrgb" = real hardware, "terminal" = simulate in the terminal, "null" = nothing
+
+[openrgb]
+host = "127.0.0.1"
+port = 6742
+device = ""           # name substring or index of the OpenRGB device; "" = auto-detect
+                      # (e.g. "ASRock Polychrome USB"). See `ledbar status`.
+zone = ""             # zone name substring or index; "" = first addressable zone
+                      # (e.g. "Addressable Header 1")
+set_zone_size = true  # resize the zone so the controller drives exactly count + offset LEDs
+require_direct = true # refuse devices without a "Direct" mode (other modes write to flash!)
+command = ""          # OpenRGB program for the ledbar-openrgb service; "" = auto-detect the AppImage
+                      # e.g. "/home/you/Applications/OpenRGB_1.0rc2_x86_64_0fca93e.AppImage"
+
+[colors]
+bar = "#1a9fff"       # Steam blue: idle, boot and download progress (the Steam Machine default)
+boot = ""             # "" = same as bar
+complete = ""         # "" = same as bar
+error = "#ff1a1a"     # overheating and fault patterns
+warning = "#ff8c00"   # optional thermal warning (see [thermal] warning_c)
+track = "#000000"     # the unfilled part of the progress bar (try "#050a10" for a faint track)
+game = ""             # colour for [game] mode = "solid"; "" = bar colour
+gauge_cool = "#1a9fff"   # [idle] mode = "temperature": cold end of the gauge
+gauge_hot = "#ff1a1a"    # ... hot end
+
+[boot]
+# Steam Machine: "Blue, breathing - Steam Machine is booting, waiting for Steam to configure the LEDs"
+enabled = true
+wait_for_steam = true      # keep breathing until the Steam client process is running ...
+timeout_seconds = 90.0     # ... but give up after this long and go idle
+min_seconds = 2.0          # always breathe at least this long so the animation is visible
+period_seconds = 3.0       # one breath takes this long
+
+[idle]
+# Steam Machine: "Blue (default color), solid - on and has completed booting, Steam is open"
+mode = "solid"             # "solid" | "off" | "breathe" | "temperature" (bar = CPU temperature gauge)
+brightness = 100           # percent of [leds] brightness while idle
+breathe_period = 4.0
+temperature_max_c = 95.0   # "temperature" mode: the bar is full at this many degrees
+
+[game]
+# What the bar does while a Steam game is running (the Steam Machine keeps it solid).
+mode = "same"              # "same" | "off" | "dim" | "solid"
+brightness = 30            # for "dim"
+color = ""                 # for "solid"; "" = [colors] game / bar
+
+[progress]
+# Steam Machine: "Blue, progressing from left to right - downloading something; the filled
+# portion represents the approximate completion percentage of the active download"
+enabled = true
+smoothing_seconds = 0.8    # ease the fill towards the latest value (Steam updates a few times a second)
+head_glow = true           # soft leading edge (the partially reached LED is partially lit)
+show_paused = false        # true: keep the bar (dimmed) while a download is paused
+paused_brightness = 35
+complete_flash = true      # short bright pulse when a download/install finishes (not on the Steam Machine)
+complete_seconds = 1.5
+stale_seconds = 120.0      # ignore manifests Steam has not touched for this long (unless still downloading)
+indeterminate = "breathe"  # "breathe" | "off": what to show while Steam reports no byte counts yet
+
+[steam]
+paths = []                 # extra Steam roots, e.g. ["/run/media/ben/games/SteamLibrary"] (libraries
+                           # listed in Steam's libraryfolders.vdf are found automatically)
+poll_interval = 1.0        # seconds between manifest checks
+require_process = true     # only report downloads while a Steam client process is running
+
+[thermal]
+# Steam Machine: "Red, solid - Overheating. CPU temp > 100C and/or GPU temp > 100C"
+enabled = true
+critical_c = 100.0         # solid red at/above this temperature (CPU or GPU)
+warning_c = 0.0            # amber breathing at/above this; 0 = disabled (try 90)
+hysteresis_c = 5.0         # temperature must drop this far below the threshold to clear
+cpu = "auto"               # hwmon chip, optionally with label: "k10temp", "k10temp:Tctl", "coretemp"
+gpu = "auto"               # "amdgpu", "amdgpu:edge", "nvidia" (uses nvidia-smi), ...
+poll_interval = 2.0
+nvidia_smi = true          # allow calling nvidia-smi when no hwmon GPU sensor exists
+
+[faults]
+# Software-detectable stand-ins for the Steam Machine hardware fault patterns. All off by default.
+disk_space = false         # Steam library almost full -> second quadrant breathing red ("SSD" pattern)
+disk_min_free_percent = 2.0
+disk_paths = []            # [] = every Steam library
+failed_units = false       # failed systemd units -> left half breathing red
+failed_units_scope = "system"   # "system" | "user" | "both"
+poll_interval = 30.0
+
+[power]
+monitor = true             # watch logind (gdbus/busctl) for suspend and shutdown
+sleep = "off"              # while suspended: "off" (Steam Machine) | "dim" | "hold"
+sleep_brightness = 10
+on_exit = "mode:Breathing" # when the service stops (logout, reboot, shutdown):
+                           #   "mode:<name>" hands the strip to one of the controller's own hardware
+                           #                 modes in the bar colour. "mode:Breathing" keeps the bar
+                           #                 breathing through a reboot and from power-on until ledbar
+                           #                 starts, like the Steam Machine. Falls back to "off" if the
+                           #                 controller has no such mode.
+                           #   "off"         fade out and switch the LEDs off
+                           #   "hold"        leave the last frame on the strip
+fade_seconds = 0.4         # fade-out duration on exit
+resume_boot = false        # replay the boot animation after waking from suspend
+

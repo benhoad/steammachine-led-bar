@@ -1,0 +1,14 @@
+[Unit]
+Description=Headless OpenRGB SDK server for ledbar
+Documentation=https://openrgb.org/
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/ledbar/bin/ledbar-openrgb-server
+Restart=on-failure
+RestartSec=5
+# OpenRGB runs headless with --server; the offscreen platform keeps Qt happy without a display.
+Environment=QT_QPA_PLATFORM=offscreen
+
+[Install]
+WantedBy=default.target

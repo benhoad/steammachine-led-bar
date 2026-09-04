@@ -1,0 +1,18 @@
+[Unit]
+Description=Steam Machine style LED bar (ledbar)
+Wants=ledbar-openrgb.service
+After=ledbar-openrgb.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/ledbar/bin/ledbar run
+Restart=on-failure
+RestartSec=3
+# exit 2 = config error, 3 = OpenRGB device/zone problem: fix the config instead of looping
+RestartPreventExitStatus=2 3
+# ledbar fades the bar out and turns it off when it receives SIGTERM.
+TimeoutStopSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

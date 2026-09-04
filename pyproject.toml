@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ledbar"
+version = "0.1.0"
+description = "Steam Machine style LED status bar for a Bazzite/Linux gaming PC, driven through OpenRGB"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = ["openrgb-python>=0.3.0"]
+
+[project.scripts]
+ledbar = "ledbar.cli:main"
+
+[tool.setuptools]
+packages = ["ledbar", "ledbar.backends"]
+
+[tool.setuptools.package-data]
+ledbar = ["config.example.toml"]

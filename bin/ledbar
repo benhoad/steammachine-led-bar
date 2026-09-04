@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Launcher: runs the ledbar package with the bundled virtualenv (or vendored deps).
+set -u
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+APP_DIR="$(cd -- "$(dirname -- "$SELF")/.." && pwd)"
+if [ -x "$APP_DIR/venv/bin/python" ]; then
+    PY="$APP_DIR/venv/bin/python"
+else
+    PY="${PYTHON:-python3}"
+fi
+export LEDBAR_VENDOR="${LEDBAR_VENDOR:-$APP_DIR/vendor}"
+export PYTHONPATH="$APP_DIR${PYTHONPATH:+:$PYTHONPATH}"
+exec "$PY" -m ledbar "$@"

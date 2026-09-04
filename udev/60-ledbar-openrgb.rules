@@ -1,0 +1,18 @@
+# Minimal OpenRGB udev rules shipped with ledbar (fallback).
+#
+# The complete rules file for every device OpenRGB supports is bundled inside
+# the OpenRGB AppImage at usr/lib/udev/rules.d/60-openrgb.rules; install.sh
+# extracts and installs that one when it can find the AppImage.
+#
+# Distro packages of OpenRGB (pacman, dnf, apt, zypper) install their own rules; then this
+# file is not needed.
+#
+# Install:  sudo install -m 644 60-ledbar-openrgb.rules /etc/udev/rules.d/
+#           sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# User I2C/SMBus access (older motherboards with SMBus RGB controllers)
+KERNEL=="i2c-[0-99]*", TAG+="uaccess"
+
+# ASRock Polychrome USB (motherboard LED controller)
+SUBSYSTEMS=="usb|hidraw", ATTRS{idVendor}=="26ce", ATTRS{idProduct}=="01a2", TAG+="uaccess", TAG+="ASRock_Polychrome_USB"
+SUBSYSTEMS=="usb|hidraw", ATTRS{idVendor}=="26ce", ATTRS{idProduct}=="01a6", TAG+="uaccess", TAG+="ASRock_Deskmini_Addressable_LED_Strip"
