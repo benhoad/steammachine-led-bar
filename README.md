@@ -174,6 +174,13 @@ mode = "same"         # "off" or "dim" while a game is running
 warning_c = 90        # amber breathing above this temperature (0 = off)
 ```
 
+For an advanced two-part layout like the Steam Machine (a progress bar plus a
+small status light), you can reserve the first LED(s) of the strip as a **power
+indicator**: set `offset` and `offset_mode = "power_led"` under `[leds]` (see the
+`[indicator]` section in the example config). Details and the alternatives,
+including a plain power-LED on the motherboard header, are in
+[docs/CONTROLLERS.md](docs/CONTROLLERS.md#status--power-indicator-optional).
+
 ## Problems
 
 - **`ledbar` command not found.** Log out and back in, or use `~/.local/share/ledbar/bin/ledbar`.

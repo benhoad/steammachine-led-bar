@@ -20,7 +20,7 @@ from .config import Config
 from .power import PowerMonitor
 from .render import Compositor, FrameShaper
 from .sensors import FaultMonitor, ThermalMonitor
-from .state import Inputs, StateMachine
+from .state import Inputs, StateMachine, indicator_color
 from .steam import DownloadState, SteamMonitor
 
 log = logging.getLogger("ledbar.daemon")
@@ -140,6 +140,10 @@ class Daemon:
         start = time.monotonic()
         self.machine = StateMachine(cfg, start)
         period = 1.0 / cfg.leds.fps
+        self._power_led = cfg.leds.offset_mode == "power_led" and cfg.leds.offset > 0
+        if self._power_led and self.backend.mode_based:
+            log.warning("[leds] offset_mode = 'power_led' needs per-LED control; ignored in whole-strip mode")
+            self._power_led = False
         last_send_time = -1e9
         last_status = None
         last_scene = None
@@ -178,7 +182,8 @@ class Daemon:
                 instant = scene.name in ("sleep", "shutdown") and last_scene not in ("sleep", "shutdown")
                 self.compositor.set_scene(scene, now, decision.fill_key, instant=instant)
                 frame = self.compositor.render(now)
-                physical = self.shaper.shape(frame)
+                indicator = indicator_color(decision, cfg) if self._power_led else None
+                physical = self.shaper.shape(frame, indicator)
                 if physical != self.last_sent or now - last_send_time >= cfg.leds.keepalive_seconds:
                     if self.backend.write(physical):
                         self.last_sent = physical

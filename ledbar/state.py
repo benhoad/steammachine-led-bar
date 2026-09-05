@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .colors import RGB
+from .colors import RGB, parse_hex, scale
 from .config import Config
 from .render import Scene
 from .sensors import Fault
@@ -228,3 +228,28 @@ class StateMachine:
             status = f"idle (cpu {temp:.0f}C)" if temp is not None else "idle (no temperature sensor)"
             return Decision(scene, fill_key="temperature", status=status)
         return Decision(Scene(kind="solid", name="idle", color=self.c_bar, level=level), status="idle")
+
+
+def indicator_color(decision: "Decision", config: Config) -> Optional[RGB]:
+    """Colour for the power-LED indicator (the ``offset`` region), or None = off.
+
+    Mirrors the Steam Machine indicator: white normally, red on overheat/fault,
+    and a configurable state going into sleep.  Returns a 0..1 colour already
+    scaled by ``[indicator] brightness``; the shaper applies the global
+    brightness/gamma/colour-order.
+    """
+    ind = config.indicator
+    name = decision.scene.name
+    level = max(0.0, min(1.0, ind.brightness / 100.0))
+    if name == "shutdown":
+        return None
+    if name == "sleep":
+        if ind.sleep == "off":
+            return None
+        return scale(parse_hex(ind.color), level)
+    if name == "thermal-critical" or name.startswith("fault-"):
+        fault = ind.fault_color or config.colors.error
+        return scale(parse_hex(fault), level)
+    if name == "thermal-warning":
+        return scale(parse_hex(config.colors.warning), level)
+    return scale(parse_hex(ind.color), level)

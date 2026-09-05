@@ -32,6 +32,13 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(len(config.warnings), 2)
         self.assertEqual(config.leds.count, 24)
 
+    def test_offset_mode(self):
+        c = config_from_dict({"leds": {"offset": 1, "offset_mode": "power_led"}})
+        self.assertEqual(c.leds.offset_mode, "power_led")
+        self.assertEqual(c.warnings, [])
+        # power_led with no offset is a warning, not an error
+        self.assertTrue(config_from_dict({"leds": {"offset_mode": "power_led"}}).warnings)
+
     def test_validation_errors(self):
         for data in (
             {"leds": {"count": 0}},
@@ -42,6 +49,10 @@ class ConfigTests(unittest.TestCase):
             {"power": {"on_exit": "explode"}},
             {"leds": {"count": "many"}},
             {"output": {"backend": "hue"}},
+            {"leds": {"offset_mode": "disco"}},
+            {"indicator": {"sleep": "maybe"}},
+            {"indicator": {"brightness": 200}},
+            {"indicator": {"color": "white"}},
         ):
             with self.assertRaises(ConfigError, msg=str(data)):
                 config_from_dict(data)
@@ -59,7 +70,7 @@ class ConfigTests(unittest.TestCase):
         example = Path(__file__).resolve().parent.parent / "ledbar" / "config.example.toml"
         config = config_from_dict(tomllib.load(open(example, "rb")))
         self.assertEqual(config.warnings, [])
-        for section in ("leds", "openrgb", "colors", "boot", "idle", "game", "progress", "steam", "thermal", "faults", "power"):
+        for section in ("leds", "indicator", "openrgb", "colors", "boot", "idle", "game", "progress", "steam", "thermal", "faults", "power"):
             self.assertEqual(getattr(config, section), getattr(Config(), section), section)
 
 

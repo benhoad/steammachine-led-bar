@@ -3,7 +3,8 @@ from pathlib import Path
 
 from ledbar.config import Config
 from ledbar.sensors import Fault
-from ledbar.state import Inputs, StateMachine, Threshold
+from ledbar.render import Scene
+from ledbar.state import Decision, Inputs, StateMachine, Threshold, indicator_color
 from ledbar.steam import AppStatus, DownloadState
 
 
@@ -124,6 +125,40 @@ class StateMachineTests(unittest.TestCase):
         self.scene(now=5.0, steam=self.idle)
         self.sm.restart_boot(10.0)
         self.assertEqual(self.scene(now=10.5, steam=self.idle).name, "boot")
+
+
+class IndicatorColorTests(unittest.TestCase):
+    def setUp(self):
+        self.config = Config()
+
+    def ind(self, name, **cfg):
+        for k, v in cfg.items():
+            setattr(self.config.indicator, k, v)
+        return indicator_color(Decision(Scene(name=name)), self.config)
+
+    def test_normal_is_white(self):
+        self.assertEqual(self.ind("idle"), (1.0, 1.0, 1.0))
+        self.assertEqual(self.ind("boot"), (1.0, 1.0, 1.0))
+        self.assertEqual(self.ind("progress"), (1.0, 1.0, 1.0))
+
+    def test_fault_and_overheat_use_fault_colour(self):
+        from ledbar.colors import parse_hex
+        red = parse_hex(self.config.colors.error)
+        self.assertEqual(self.ind("thermal-critical"), red)
+        self.assertEqual(self.ind("fault-ssd"), red)
+
+    def test_custom_fault_colour(self):
+        self.assertEqual(self.ind("fault-gpu", fault_color="#00ff00"), (0.0, 1.0, 0.0))
+
+    def test_sleep_solid_vs_off(self):
+        self.assertEqual(self.ind("sleep", sleep="solid"), (1.0, 1.0, 1.0))
+        self.assertIsNone(self.ind("sleep", sleep="off"))
+
+    def test_shutdown_is_off(self):
+        self.assertIsNone(self.ind("shutdown"))
+
+    def test_brightness_scales(self):
+        self.assertEqual(self.ind("idle", brightness=50), (0.5, 0.5, 0.5))
 
 
 if __name__ == "__main__":

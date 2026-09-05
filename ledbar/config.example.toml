@@ -11,13 +11,26 @@ log_level = "info"    # debug | info | warning | error
 count = 24            # LEDs that make up the bar (3 x WS2812B-8 = 24)
 reverse = false       # true if the FIRST LED of the chain is at the RIGHT end of the bar.
                       # The bar always fills from left to right; "reverse" flips the mapping.
-offset = 0            # LEDs at the start of the chain that are not part of the bar (hidden/skipped)
+offset = 0            # LEDs at the start of the chain that are not part of the bar
+offset_mode = "off"   # what those offset LEDs do: "off" (kept dark) or "power_led"
+                      # ("power_led" drives them as a Steam-Machine-style indicator: white normally,
+                      #  red on overheat/fault. Per-LED controllers only, not basic/whole-strip mode.)
 brightness = 60       # maximum brightness, 0-100 %
 gamma = 2.2           # makes fades/breathing look even to the eye; does not affect max brightness
 color_order = "RGB"   # if red/green/blue come out wrong: "GRB", "BRG", "RBG", "GBR", "BGR"
 fps = 30              # animation frame rate sent to the controller (10-60 is sensible)
 keepalive_seconds = 0.25 # resend an unchanged frame at least this often. Keep this small:
                       # ASRock's controller reverts to its stored effect when frames stop arriving
+
+
+[indicator]
+# Only used when [leds] offset_mode = "power_led". Drives the offset LEDs as a
+# status/power indicator, like the small indicator light on a Steam Machine.
+color = "#ffffff"     # normal colour (white)
+fault_color = ""      # overheat/fault colour; "" = [colors] error (red)
+brightness = 100      # percent of [leds] brightness
+sleep = "solid"       # what to leave showing going into sleep: "solid" | "off"
+                      # (a strip that holds its last frame keeps this lit while the PC sleeps)
 
 [output]
 backend = "openrgb"   # "openrgb" = real hardware, "terminal" = simulate in the terminal, "null" = nothing

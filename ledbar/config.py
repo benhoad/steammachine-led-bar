@@ -31,6 +31,8 @@ class LedsConfig:
     count: int = 24                 # LEDs that make up the bar
     reverse: bool = False           # True when LED #0 sits at the RIGHT end of the bar
     offset: int = 0                 # LEDs at the start of the chain that are not part of the bar
+    offset_mode: str = "off"        # what those offset LEDs do: "off" (blank) or "power_led"
+                                    # (drive them as a Steam-Machine-style status indicator)
     brightness: int = 60            # maximum brightness, percent
     gamma: float = 2.2              # perceptual correction; 1.0 disables
     color_order: str = "RGB"        # swap channels if colours come out wrong
@@ -155,8 +157,18 @@ class PowerConfig:
 
 
 @dataclass
+class IndicatorConfig:
+    color: str = "#ffffff"          # normal indicator colour (Steam Machine indicator = white)
+    fault_color: str = ""           # overheat/fault colour; "" = [colors] error
+    brightness: int = 100           # percent of [leds] brightness for the indicator LEDs
+    sleep: str = "solid"            # what the indicator shows going into sleep: "solid" | "off"
+                                    # (a strip that holds its last frame keeps showing this during sleep)
+
+
+@dataclass
 class Config:
     leds: LedsConfig = field(default_factory=LedsConfig)
+    indicator: IndicatorConfig = field(default_factory=IndicatorConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     openrgb: OpenRGBConfig = field(default_factory=OpenRGBConfig)
     colors: ColorsConfig = field(default_factory=ColorsConfig)
@@ -188,6 +200,7 @@ class Config:
 
 _SECTIONS = {
     "leds": LedsConfig,
+    "indicator": IndicatorConfig,
     "output": OutputConfig,
     "openrgb": OpenRGBConfig,
     "colors": ColorsConfig,
@@ -325,6 +338,9 @@ def validate(config: Config) -> None:
     leds.color_order = leds.color_order.upper()
     if leds.color_order not in COLOR_ORDERS:
         raise ConfigError(f"[leds] color_order must be one of {', '.join(COLOR_ORDERS)}")
+    _check_choice(leds.offset_mode, ("off", "power_led"), "[leds] offset_mode")
+    if leds.offset_mode == "power_led" and leds.offset < 1:
+        config.warnings.append("[leds] offset_mode = \"power_led\" but offset = 0, so there are no indicator LEDs")
     if not 1 <= leds.fps <= 120:
         raise ConfigError("[leds] fps must be between 1 and 120")
     _check_choice(config.output.backend, ("openrgb", "terminal", "null"), "[output] backend")
@@ -333,6 +349,16 @@ def validate(config: Config) -> None:
     _check_choice(config.progress.indeterminate, ("breathe", "off"), "[progress] indeterminate")
     _check_choice(config.power.sleep, ("off", "dim", "hold"), "[power] sleep")
     _check_choice(config.faults.failed_units_scope, ("system", "user", "both"), "[faults] failed_units_scope")
+    _check_choice(config.indicator.sleep, ("solid", "off"), "[indicator] sleep")
+    if not 0 <= config.indicator.brightness <= 100:
+        raise ConfigError("[indicator] brightness must be between 0 and 100")
+    for cname in ("color", "fault_color"):
+        value = getattr(config.indicator, cname)
+        if value or cname == "color":
+            try:
+                parse_hex(value)
+            except ValueError as exc:
+                raise ConfigError(f"[indicator] {cname}: {exc}") from exc
     if not (config.power.on_exit in ("off", "hold") or config.power.on_exit.startswith("mode:")):
         raise ConfigError("[power] on_exit must be 'off', 'hold' or 'mode:<OpenRGB mode name>'")
     for pct_name, pct in (("[idle] brightness", config.idle.brightness),

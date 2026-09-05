@@ -262,17 +262,29 @@ class FrameShaper:
     def total(self) -> int:
         return self.count + self.offset
 
-    def shape(self, frame: Sequence[RGB]) -> list[RGB8]:
+    def shape(self, frame: Sequence[RGB], indicator: Optional[RGB] = None) -> list[RGB8]:
+        """Map the logical bar frame onto the physical chain.
+
+        ``indicator`` (a 0..1 colour, or None) fills the ``offset`` LEDs at the
+        start of the chain; None leaves them off.  It goes through the same
+        brightness/gamma/colour-order pipeline as the bar.
+        """
         if len(frame) != self.count:
             raise ValueError(f"frame has {len(frame)} LEDs, expected {self.count}")
         logical = list(frame)
         if self.reverse:
             logical.reverse()
-        physical: list[RGB8] = [(0, 0, 0)] * self.offset
+        if indicator is None:
+            physical: list[RGB8] = [(0, 0, 0)] * self.offset
+        else:
+            physical = [self._quantise(indicator)] * self.offset
         for color in logical:
-            rgb8 = to_rgb8(color, self.gamma, self.brightness)
-            physical.append(reorder(rgb8, self.color_order) if self.color_order != "RGB" else rgb8)
+            physical.append(self._quantise(color))
         return physical
+
+    def _quantise(self, color: RGB) -> RGB8:
+        rgb8 = to_rgb8(color, self.gamma, self.brightness)
+        return reorder(rgb8, self.color_order) if self.color_order != "RGB" else rgb8
 
     def fade_out(self, last: Sequence[RGB8], steps: int) -> list[list[RGB8]]:
         """Frames that dim ``last`` to black over ``steps`` frames."""

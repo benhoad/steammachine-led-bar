@@ -91,6 +91,19 @@ class ShaperTests(unittest.TestCase):
         self.assertEqual(len(frames), 4)
         self.assertEqual(frames[-1], [(0, 0, 0), (0, 0, 0)])
 
+    def test_indicator_fills_offset(self):
+        shaper = FrameShaper(2, offset=2, brightness=1.0, gamma=1.0)
+        # no indicator -> offset stays dark
+        self.assertEqual(shaper.shape([BLUE, BLUE]), [(0, 0, 0), (0, 0, 0), (0, 0, 255), (0, 0, 255)])
+        # indicator white -> offset LEDs white, bar unchanged
+        out = shaper.shape([BLUE, BLUE], indicator=(1.0, 1.0, 1.0))
+        self.assertEqual(out, [(255, 255, 255), (255, 255, 255), (0, 0, 255), (0, 0, 255)])
+
+    def test_indicator_respects_brightness_and_order(self):
+        shaper = FrameShaper(1, offset=1, brightness=0.5, gamma=1.0, color_order="GRB")
+        out = shaper.shape([(0.0, 0.0, 0.0)], indicator=(1.0, 0.0, 0.0))
+        self.assertEqual(out[0], (0, 128, 0))   # red@50% -> (128,0,0) -> GRB -> (0,128,0)
+
 
 class CompositorTests(unittest.TestCase):
     def test_crossfade(self):
