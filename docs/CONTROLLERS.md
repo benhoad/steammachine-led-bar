@@ -157,9 +157,23 @@ If OpenRGB cannot open the port, your user needs access to it:
 ls -l /dev/ttyUSB0            # note the group (often 'dialout' or 'uucp')
 ```
 
-Bazzite already tags USB serial adapters for user access via the OpenRGB udev
-rules `bash install.sh --udev` installs; on other distros add yourself to that
-group (`sudo usermod -aG dialout $USER`) and re-log in, or add a udev rule.
+The port is normally `root:dialout` with no access for anyone else, so you need
+one of these:
+
+- **Group membership** (works everywhere): `sudo usermod -aG dialout $USER`, then
+  **reboot**. A logout/login is usually enough, but the `systemd --user` manager
+  running the ledbar services inherits its groups at session start, so a reboot is
+  the reliable option.
+- **udev rule** (no group change): `bash install.sh --udev` installs rules that tag
+  common USB-serial LED controllers (Espressif, CH340, CP210x, FTDI, Arduino) with
+  `uaccess`, granting the logged-in user access. Replug the device or run
+  `sudo udevadm control --reload-rules && sudo udevadm trigger` afterwards.
+
+**This failure is deceptive:** OpenRGB lists an Adalight device even when it cannot
+open the port, because the entry comes from its config file. So `ledbar status` shows
+the device and ledbar streams happily, while every write silently fails and the LEDs
+never change. If WLED's Info panel shows no realtime source (`live: false`) while
+ledbar says it is connected, check `test -w /dev/ttyACM0` first.
 
 **Point ledbar at it**
 

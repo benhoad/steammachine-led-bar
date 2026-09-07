@@ -116,11 +116,18 @@ case "$OPENRGB" in
         fi
         version_line="$(printf '%s\n' "$output" | grep -i -m1 'openrgb' || printf '%s' "$output" | tail -1)"
         say "$version_line"
+        # NB: 1.0rc builds report themselves as "OpenRGB 0.9+ (1.0rc3.1)", so test the
+        # parenthesised release first - matching "OpenRGB 0." alone is a false positive.
         case "$version_line" in
-            *1.0rc1*|*1.0rc2*|*"OpenRGB 0."*)
-                say "WARNING: OpenRGB older than 1.0rc3 cannot drive ASRock Polychrome USB headers per LED"
-                say "         (Direct mode fix from January 2026). Run:  bash install.sh --openrgb" ;;
+            *1.0rc1*|*1.0rc2*) too_old=1 ;;
+            *1.0rc*)           too_old=0 ;;
+            *"OpenRGB 0."*)    too_old=1 ;;
+            *)                 too_old=0 ;;
         esac
+        if [ "$too_old" = 1 ]; then
+            say "WARNING: OpenRGB older than 1.0rc3 cannot drive ASRock Polychrome USB headers per LED"
+            say "         (Direct mode fix from January 2026). Run:  bash install.sh --openrgb"
+        fi
         ;;
 esac
 

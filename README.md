@@ -253,6 +253,10 @@ Wiring, settings and troubleshooting:
   to its stored effect whenever ledbar stops sending frames. Make sure `keepalive_seconds` under
   `[leds]` is `0.25` (older configs had `2.0`), and that no second OpenRGB with hardware access is
   running (`pgrep -af -i openrgb` should list only the `ledbar-openrgb` service).
+- **ledbar says it's connected but the LEDs never change (USB/serial controller).** Check
+  `test -w /dev/ttyACM0`. OpenRGB lists a serial device even when it can't open the port, so
+  everything looks fine while writes fail. Fix with `sudo usermod -aG dialout $USER` then reboot,
+  or `bash install.sh --udev` for the udev-rule route.
 - **Wrong colours or backwards bar.** Re-run `ledbar identify` and fix `color_order` / `reverse` / `offset` in the config.
 - **Bar stays breathing.** It waits up to 90 s for Steam to start. Set `wait_for_steam = false` under `[boot]` if you don't start Steam at login.
 - **Nothing during a download.** `ledbar status` lists the manifests it sees. Libraries on other drives are found automatically; unusual locations go in `[steam] paths`.

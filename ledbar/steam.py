@@ -283,6 +283,17 @@ class AppStatus:
         return bool(self.flags & ACTIVE_MASK)
 
     @property
+    def is_starting(self) -> bool:
+        """Steam has started an update but is not reporting a working phase yet.
+
+        A fresh install sits at StateFlags 1026 (Update Required + Update
+        Started) with the byte counters still at zero, sometimes for minutes
+        while it preallocates.  The same bit is set for a merely *queued*
+        download, so callers must corroborate this (see ``SteamMonitor``).
+        """
+        return bool(self.flags & STATE_UPDATE_STARTED) and not self.is_active
+
+    @property
     def is_running(self) -> bool:
         return bool(self.flags & STATE_APP_RUNNING)
 
@@ -307,12 +318,16 @@ class AppStatus:
         if self.flags & STATE_UPDATE_PAUSED:
             return "paused"
         if self.flags & STATE_UPDATE_STARTED:
-            return "queued"
+            return "starting"
         return "idle"
 
     @property
     def fraction(self) -> Optional[float]:
         """Progress 0..1, or ``None`` when Steam gives us nothing to go on."""
+        if self.is_starting and self.bytes_downloaded == 0 and self.bytes_staged == 0:
+            # started, but no progress reported yet: better an indeterminate
+            # animation than a bar pinned at 0%
+            return None
         if self.flags & STATE_STAGING and self.bytes_to_stage > 0:
             return _ratio(self.bytes_staged, self.bytes_to_stage)
         if self.flags & STATE_COMMITTING:
@@ -540,14 +555,25 @@ class SteamMonitor:
         for status in statuses:
             if status.is_paused and not self.show_paused:
                 continue
-            if not (status.is_active or (status.is_paused and self.show_paused)):
-                continue
-            fresh = (now - status.mtime) <= self.stale_seconds or status.downloading_dir
-            if not fresh:
+            recent = (now - status.mtime) <= self.stale_seconds
+            if status.is_active or (status.is_paused and self.show_paused):
+                # a working phase: trust it while the manifest is fresh, or while
+                # Steam still has a downloading/ folder open for it
+                if not (recent or status.downloading_dir):
+                    continue
+            elif status.is_starting:
+                # 1026 is also what a queued download looks like, so require both
+                # a downloading/ folder and a manifest Steam is still touching
+                if not (recent and status.downloading_dir):
+                    continue
+            else:
                 continue
             candidates.append(status)
         if not candidates:
             return None
-        # Prefer things that are actually moving bytes, then the most recent.
-        candidates.sort(key=lambda s: (bool(s.flags & (STATE_DOWNLOADING | STATE_STAGING)), s.mtime), reverse=True)
+        # Prefer things actually moving bytes, then a real working phase, then recency.
+        candidates.sort(
+            key=lambda s: (bool(s.flags & (STATE_DOWNLOADING | STATE_STAGING)), s.is_active, s.mtime),
+            reverse=True,
+        )
         return candidates[0]

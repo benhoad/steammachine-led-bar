@@ -193,6 +193,43 @@ class MonitorTests(unittest.TestCase):
         self.assertFalse(state.active)
         self.assertFalse(state.steam_running)
 
+    def test_fresh_install_at_1026_is_detected(self):
+        """A new game install: StateFlags 1026, zero bytes, downloading/ present."""
+        path = self.write(STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED)
+        text = path.read_text().replace('"BytesDownloaded"\t\t"250"', '"BytesDownloaded"\t\t"0"')
+        text = text.replace('"BytesStaged"\t\t"1000"', '"BytesStaged"\t\t"0"')
+        path.write_text(text)
+        (self.steamapps / "downloading" / "440").mkdir(parents=True)
+        state = self.monitor.poll()
+        self.assertTrue(state.active)
+        self.assertEqual(state.phase, "starting")
+        # no bytes reported yet -> indeterminate, not a bar pinned at 0%
+        self.assertIsNone(state.fraction)
+
+    def test_started_without_downloading_dir_is_ignored(self):
+        """1026 on its own is also what a queued download looks like."""
+        self.write(STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED)
+        self.assertFalse(self.monitor.poll().active)
+
+    def test_started_but_stale_is_ignored(self):
+        self.write(STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED, mtime=time.time() - 3600)
+        (self.steamapps / "downloading" / "440").mkdir(parents=True)
+        self.assertFalse(self.monitor.poll().active)
+
+    def test_started_with_bytes_gives_a_real_fraction(self):
+        """Once Steam reports bytes, the same state becomes a real progress bar."""
+        self.write(STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED)
+        (self.steamapps / "downloading" / "440").mkdir(parents=True)
+        state = self.monitor.poll()
+        self.assertTrue(state.active)
+        self.assertAlmostEqual(state.fraction, 0.25)   # 250/1000 from the fixture
+
+    def test_working_phase_beats_a_merely_started_one(self):
+        self.write(STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED, appid=10)
+        (self.steamapps / "downloading" / "10").mkdir(parents=True)
+        self.write(STATE_DOWNLOADING | STATE_UPDATE_STARTED | 6, appid=440)
+        self.assertEqual(self.monitor.poll().app.appid, 440)
+
     def test_prefers_moving_download_over_queued(self):
         self.write(STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED | 256, appid=10)   # "update running" but no bytes
         self.write(STATE_DOWNLOADING | STATE_UPDATE_STARTED | 6, appid=440)

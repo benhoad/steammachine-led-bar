@@ -13,6 +13,16 @@
 # User I2C/SMBus access (older motherboards with SMBus RGB controllers)
 KERNEL=="i2c-[0-99]*", TAG+="uaccess"
 
+# USB-serial LED controllers (Adalight: ESP32, Arduino, and USB-serial adapters).
+# Without this the port is root:dialout only and OpenRGB cannot open it — it will
+# still LIST the device from its config, so it looks connected while every write
+# silently fails.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", TAG+="uaccess"   # Espressif (ESP32-C3/S3 native USB)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", TAG+="uaccess"   # CH340/CH341
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", TAG+="uaccess"   # CP210x
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", TAG+="uaccess"   # FTDI
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", TAG+="uaccess"   # Arduino
+
 # ASRock Polychrome USB (motherboard LED controller)
 SUBSYSTEMS=="usb|hidraw", ATTRS{idVendor}=="26ce", ATTRS{idProduct}=="01a2", TAG+="uaccess", TAG+="ASRock_Polychrome_USB"
 SUBSYSTEMS=="usb|hidraw", ATTRS{idVendor}=="26ce", ATTRS{idProduct}=="01a6", TAG+="uaccess", TAG+="ASRock_Deskmini_Addressable_LED_Strip"
