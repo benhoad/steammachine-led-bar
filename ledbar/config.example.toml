@@ -92,7 +92,8 @@ show_paused = false        # true: keep the bar (dimmed) while a download is pau
 paused_brightness = 35
 complete_flash = true      # short bright pulse when a download/install finishes (not on the Steam Machine)
 complete_seconds = 1.5
-stale_seconds = 120.0      # ignore manifests Steam has not touched for this long (unless still downloading)
+stale_seconds = 600.0      # ignore manifests Steam has not touched for this long. Steam only rewrites them
+                           # every few minutes mid-download, so keep this generous (10 min default)
 indeterminate = "breathe"  # "breathe" | "off": what to show while Steam reports no byte counts yet
 
 [steam]

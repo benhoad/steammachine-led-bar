@@ -211,6 +211,14 @@ class MonitorTests(unittest.TestCase):
         self.write(STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED)
         self.assertFalse(self.monitor.poll().active)
 
+    def test_live_download_survives_steam_not_rewriting_the_manifest(self):
+        """Steam only rewrites manifests every few minutes; the bar must not drop out."""
+        monitor = SteamMonitor(extra_roots=[str(self.root)], stale_seconds=600, require_steam_process=False)
+        self.write(STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED, mtime=time.time() - 290)
+        (self.steamapps / "downloading" / "440").mkdir(parents=True)
+        state = monitor.poll()
+        self.assertTrue(state.active)          # 290s old but still downloading
+
     def test_started_but_stale_is_ignored(self):
         self.write(STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED, mtime=time.time() - 3600)
         (self.steamapps / "downloading" / "440").mkdir(parents=True)

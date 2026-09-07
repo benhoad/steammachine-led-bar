@@ -113,7 +113,9 @@ class ProgressConfig:
     paused_brightness: int = 35
     complete_flash: bool = True     # short pulse when a download finishes
     complete_seconds: float = 1.5
-    stale_seconds: float = 120.0    # ignore manifests untouched for this long (unless a downloading dir exists)
+    stale_seconds: float = 600.0    # ignore manifests untouched for this long. Steam rewrites them only
+                                    # every few minutes during a download, so this must be generous or the
+                                    # bar drops back to idle between writes.
     indeterminate: str = "breathe"  # breathe | off   (when Steam gives no byte counts)
 
 
