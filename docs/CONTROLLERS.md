@@ -289,8 +289,8 @@ PLED sense (input) — **measure `PLED+` to `PLED−` with the PC on first**:
 | **unknown / want margin** | optocoupler across the PLED, output transistor pulls GPIO5 with a pull-up to 3V3 (inverted logic in firmware) |
 
 **Ready-made usermod:** the firmware for exactly this lives in
-[`firmware/pc-power-led-usermod/`](../firmware/pc-power-led-usermod/) — the usermod
-source plus build and settings instructions.
+[`firmware/pc_power_led/`](../firmware/pc_power_led/) — the usermod source plus
+build and settings instructions (WLED 0.15+/16.x).
 
 You can tap the PLED in parallel with the real front-panel LED or replace it.
 Check the board manual for `PLED+` polarity. And remember this only does anything

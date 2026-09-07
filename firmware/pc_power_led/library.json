@@ -1,0 +1,4 @@
+{
+  "name": "pc_power_led",
+  "build": { "libArchive": false }
+}

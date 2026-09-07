@@ -36,7 +36,8 @@ def _import_openrgb() -> tuple[Any, Any, Any]:
     except ImportError as exc:  # pragma: no cover - depends on environment
         raise BackendError(
             "the 'openrgb-python' package is not installed. Run install.sh, or "
-            "'pip install openrgb-python', or set [output] backend = \"terminal\" to simulate."
+            "'pip install openrgb-python', or set [output] backend = \"terminal\" to simulate.",
+            fatal=True,
         ) from exc
     return OpenRGBClient, DeviceType, RGBColor
 
@@ -67,11 +68,17 @@ class OpenRGBBackend(Backend):
     def healthy(self) -> bool:
         return self._connected
 
+    @property
+    def last_error(self) -> str:
+        return self._last_error
+
     def open(self) -> None:
         try:
             self._connect()
-        except BackendError:
-            raise
+        except BackendError as exc:
+            if exc.fatal:
+                raise
+            self._note_failure(str(exc))
         except Exception as exc:  # server not up yet, etc.
             self._note_failure(f"cannot connect to OpenRGB at {self.cfg.host}:{self.cfg.port}: {exc}")
 
@@ -102,7 +109,10 @@ class OpenRGBBackend(Backend):
         try:
             devices = list(client.devices)
             if not devices:
-                raise BackendError("OpenRGB reports no devices. Is the LED controller detected (udev rules, i2c)?")
+                raise BackendError(
+                    "OpenRGB reports no devices yet - it may still be detecting hardware, "
+                    "or the controller is not visible (udev rules, i2c)."
+                )
             self.device_index = self._select_device(devices, DeviceType)
             device = devices[self.device_index]
             self.zone_index = self._select_zone(device)
@@ -238,8 +248,11 @@ class OpenRGBBackend(Backend):
                 return False
             try:
                 self._connect()
-            except BackendError:
-                raise
+            except BackendError as exc:
+                if exc.fatal:
+                    raise
+                self._note_failure(str(exc))
+                return False
             except Exception as exc:
                 self._note_failure(f"cannot connect to OpenRGB at {self.cfg.host}:{self.cfg.port}: {exc}")
                 return False
@@ -412,8 +425,11 @@ class OpenRGBModeBackend(OpenRGBBackend):
                 return False
             try:
                 self._connect()
-            except BackendError:
-                raise
+            except BackendError as exc:
+                if exc.fatal:
+                    raise
+                self._note_failure(str(exc))
+                return False
             except Exception as exc:
                 self._note_failure(f"cannot connect to OpenRGB at {self.cfg.host}:{self.cfg.port}: {exc}")
                 return False

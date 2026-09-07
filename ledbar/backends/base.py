@@ -6,7 +6,18 @@ from ..colors import RGB8
 
 
 class BackendError(Exception):
-    """Raised for configuration problems the user has to fix."""
+    """Raised for problems the user may have to fix.
+
+    ``fatal`` marks the ones that can never resolve themselves (a missing Python
+    package, say).  Everything else is retried: when ledbar and OpenRGB start
+    together, OpenRGB accepts connections *before* it has finished enumerating
+    hardware, so "no devices" and "device not found" are normal for the first
+    few seconds and must not kill the service.
+    """
+
+    def __init__(self, message: str, fatal: bool = False) -> None:
+        super().__init__(message)
+        self.fatal = fatal
 
 
 class Backend:
@@ -57,3 +68,8 @@ class Backend:
     @property
     def healthy(self) -> bool:
         return True
+
+    @property
+    def last_error(self) -> str:
+        """Why the backend is unhealthy, for `ledbar status`."""
+        return ""

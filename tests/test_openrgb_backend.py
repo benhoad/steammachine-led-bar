@@ -76,21 +76,27 @@ class OpenRGBBackendTests(unittest.TestCase):
         backend.open()
         self.assertEqual((backend.device_index, backend.zone_index), (1, 2))
 
-    def test_bad_selection_errors(self):
-        with self.assertRaises(BackendError):
-            OpenRGBBackend(OpenRGBConfig(port=self.server.port, device="nonexistent"), 24).open()
-        with self.assertRaises(BackendError):
-            OpenRGBBackend(OpenRGBConfig(port=self.server.port, device="1", zone="9"), 24).open()
-        with self.assertRaises(BackendError):   # 300 LEDs do not fit a 100 LED zone
-            OpenRGBBackend(OpenRGBConfig(port=self.server.port), 300).open()
-        with self.assertRaises(BackendError):   # fixed size zone
-            OpenRGBBackend(OpenRGBConfig(port=self.server.port, device="1", zone="PCH"), 3).open()
+    def test_bad_selection_is_reported_but_retried(self):
+        """Selection problems must not kill the service - OpenRGB may still be detecting."""
+        cases = [
+            (OpenRGBConfig(port=self.server.port, device="nonexistent"), 24, "nonexistent"),
+            (OpenRGBConfig(port=self.server.port, device="1", zone="9"), 24, "zone"),
+            (OpenRGBConfig(port=self.server.port), 300, "300"),            # too many LEDs for the zone
+            (OpenRGBConfig(port=self.server.port, device="1", zone="PCH"), 3, "fixed size"),
+        ]
+        for cfg, total, expected in cases:
+            backend = OpenRGBBackend(cfg, total)
+            backend.open()                                   # does not raise
+            self.assertFalse(backend.healthy, expected)
+            self.assertIn(expected, backend.last_error)      # but the reason is reported
 
     def test_require_direct(self):
         server = FakeServer([keyboard_like()]).start()
         try:
-            with self.assertRaises(BackendError):
-                OpenRGBBackend(OpenRGBConfig(port=server.port), 24).open()
+            strict = OpenRGBBackend(OpenRGBConfig(port=server.port), 24)
+            strict.open()
+            self.assertFalse(strict.healthy)
+            self.assertIn("Direct", strict.last_error)
             backend = OpenRGBBackend(OpenRGBConfig(port=server.port, require_direct=False, zone="0", set_zone_size=False), 24)
             backend.open()
             self.assertTrue(backend.healthy)
@@ -115,6 +121,46 @@ class OpenRGBBackendTests(unittest.TestCase):
             time.sleep(0.05)
         self.assertTrue(backend.healthy)
         self.assertEqual(self.server.connections, 1)
+
+    def test_survives_openrgb_still_detecting_at_startup(self):
+        """The startup race: OpenRGB accepts connections before it has devices."""
+        server = FakeServer([]).start()          # up, but nothing detected yet
+        try:
+            backend = OpenRGBBackend(OpenRGBConfig(port=server.port, reconnect_seconds=0.05), total=24)
+            backend.open()                        # must NOT raise: detection may still be running
+            self.assertFalse(backend.healthy)
+            self.assertFalse(backend.write([(1, 2, 3)] * 24))
+            server.devices.append(asrock_like())  # OpenRGB finishes detecting
+            deadline = time.time() + 3
+            while time.time() < deadline and not backend.write([(1, 2, 3)] * 24):
+                time.sleep(0.05)
+            self.assertTrue(backend.healthy)      # recovers on its own
+        finally:
+            server.stop()
+
+    def test_missing_device_is_retried_not_fatal(self):
+        """A device named in the config may simply not be detected yet."""
+        server = FakeServer([keyboard_like()]).start()
+        try:
+            backend = OpenRGBBackend(
+                OpenRGBConfig(port=server.port, device="ESP32", reconnect_seconds=0.05), total=24)
+            backend.open()                        # must not raise
+            self.assertFalse(backend.healthy)
+            esp = asrock_like()
+            esp.name = "ESP32"
+            server.devices.append(esp)
+            deadline = time.time() + 3
+            while time.time() < deadline and not backend.write([(1, 2, 3)] * 24):
+                time.sleep(0.05)
+            self.assertTrue(backend.healthy)
+        finally:
+            server.stop()
+
+    def test_missing_package_stays_fatal(self):
+        from ledbar.backends.base import BackendError
+        err = BackendError("nope", fatal=True)
+        self.assertTrue(err.fatal)
+        self.assertFalse(BackendError("transient").fatal)
 
     def test_server_down_at_start_then_up(self):
         self.server.stop()

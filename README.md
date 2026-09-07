@@ -181,6 +181,56 @@ indicator**: set `offset` and `offset_mode = "power_led"` under `[leds]` (see th
 including a plain power-LED on the motherboard header, are in
 [docs/CONTROLLERS.md](docs/CONTROLLERS.md#status--power-indicator-optional).
 
+## Optional: the power-LED indicator (WLED usermod)
+
+If you drive the strip with an ESP running WLED, you can also have it read the
+motherboard's power-LED header and drive a separate indicator LED — so it shows
+a **steady** light while the PC sleeps instead of the motherboard's blink. That
+needs a custom WLED build, because usermods are compiled in.
+
+Written for WLED 0.15+ / 16.x, which enables usermods per build environment
+(there is no `usermods_list.cpp` any more).
+
+**1. Install PlatformIO** in a venv, so nothing touches Bazzite's immutable root.
+
+```bash
+python3 -m venv ~/.platformio-venv && ~/.platformio-venv/bin/pip install platformio
+```
+
+**2. Clone WLED at the version you're running** (check Info in the WLED UI, and
+match it so nothing else changes).
+
+```bash
+git clone --branch v16.0.1 --depth 1 https://github.com/wled/WLED.git && cd WLED
+```
+
+**3. Copy the usermod in.** The folder name is what you enable in step 4.
+
+```bash
+cp -r ~/steammachine-led-bar/firmware/pc_power_led usermods/
+```
+
+**4. Enable it.** In `platformio.ini`, find `[env:esp32c3dev]` and add it to the
+line that's already there:
+
+```
+custom_usermods = audioreactive pc_power_led
+```
+
+**5. Build and flash** over the USB cable.
+
+```bash
+~/.platformio-venv/bin/pio run -e esp32c3dev -t upload --upload-port /dev/ttyACM0
+```
+
+Your WLED settings live in the filesystem partition, so they normally survive the
+flash. Afterwards the usermod appears under Config → Usermods as `PCPowerLED`,
+and WLED's Info panel gains a "PC power" row showing `awake` / `asleep` / `off`,
+which is the quickest way to check the sense wiring.
+
+Wiring, settings and troubleshooting:
+[firmware/pc_power_led/readme.md](firmware/pc_power_led/readme.md).
+
 ## Problems
 
 - **`ledbar` command not found.** Log out and back in, or use `~/.local/share/ledbar/bin/ledbar`.

@@ -1,5 +1,3 @@
-#pragma once
-
 #include "wled.h"
 
 /*
@@ -94,12 +92,12 @@ class PcPowerLedUsermod : public Usermod {
     bool allocatePins() {
       pinsOk = false;
       if (sensePin < 0 || ledPin < 0) return false;
-      if (!pinManager.allocatePin(sensePin, false, PinOwner::UM_Unspecified)) {
+      if (!PinManager::allocatePin(sensePin, false, PinOwner::UM_Unspecified)) {
         DEBUG_PRINTLN(F("PCPowerLED: sense pin unavailable"));
         return false;
       }
-      if (!pinManager.allocatePin(ledPin, true, PinOwner::UM_Unspecified)) {
-        pinManager.deallocatePin(sensePin, PinOwner::UM_Unspecified);
+      if (!PinManager::allocatePin(ledPin, true, PinOwner::UM_Unspecified)) {
+        PinManager::deallocatePin(sensePin, PinOwner::UM_Unspecified);
         DEBUG_PRINTLN(F("PCPowerLED: LED pin unavailable"));
         return false;
       }
@@ -117,8 +115,8 @@ class PcPowerLedUsermod : public Usermod {
     }
 
     void releasePins(int8_t sense, int8_t led) {
-      if (sense >= 0) pinManager.deallocatePin(sense, PinOwner::UM_Unspecified);
-      if (led   >= 0) pinManager.deallocatePin(led,   PinOwner::UM_Unspecified);
+      if (sense >= 0) PinManager::deallocatePin(sense, PinOwner::UM_Unspecified);
+      if (led   >= 0) PinManager::deallocatePin(led,   PinOwner::UM_Unspecified);
       pinsOk = false;
     }
 
@@ -241,15 +239,6 @@ class PcPowerLedUsermod : public Usermod {
       return complete;
     }
 
-    void appendConfigData() override {
-      oappend(SET_F("addInfo('PCPowerLED:sensePin',1,'GPIO reading PLED+');"));
-      oappend(SET_F("addInfo('PCPowerLED:ledPin',1,'GPIO driving the indicator LED');"));
-      oappend(SET_F("addInfo('PCPowerLED:senseInverted',1,'on when sensing via an optocoupler');"));
-      oappend(SET_F("addInfo('PCPowerLED:awakeMode',1,'0 off, 1 solid, 2 blink');"));
-      oappend(SET_F("addInfo('PCPowerLED:sleepMode',1,'0 off, 1 solid, 2 blink');"));
-      oappend(SET_F("addInfo('PCPowerLED:offMode',1,'0 off, 1 solid, 2 blink');"));
-    }
-
     uint16_t getId() override {
       return USERMOD_ID_UNSPECIFIED;
     }
@@ -257,3 +246,10 @@ class PcPowerLedUsermod : public Usermod {
 
 const char PcPowerLedUsermod::_name[]    PROGMEM = "PCPowerLED";
 const char PcPowerLedUsermod::_enabled[] PROGMEM = "enabled";
+
+/*---------------------------------------------------------*\
+| WLED 0.15+/16.x registers usermods with this macro; there  |
+| is no usermods_list.cpp any more.                          |
+\*---------------------------------------------------------*/
+static PcPowerLedUsermod pc_power_led_usermod;
+REGISTER_USERMOD(pc_power_led_usermod);

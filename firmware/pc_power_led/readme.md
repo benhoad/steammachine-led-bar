@@ -27,34 +27,46 @@ Avoid GPIO2, GPIO8 and GPIO9 (strapping pins). GPIO4 is normally the strip data.
 
 ## Build
 
-1. Clone WLED and check out a release tag (0.14 or newer):
+Written for **WLED 0.15+ / 16.x**, which registers usermods with
+`REGISTER_USERMOD` and enables them per build environment — there is no
+`usermods_list.cpp` any more.
+
+1. **PlatformIO**, in a venv so it works on an immutable OS like Bazzite:
    ```bash
-   git clone https://github.com/wled/WLED.git && cd WLED
+   python3 -m venv ~/.platformio-venv && ~/.platformio-venv/bin/pip install platformio
    ```
-2. Copy this folder in:
+   Then use `~/.platformio-venv/bin/pio` below (or add it to your PATH).
+
+2. **Clone WLED at the version you are running** (check Info in the WLED UI, and
+   match it so nothing else changes):
    ```bash
-   cp -r <this-repo>/firmware/pc-power-led-usermod usermods/
-   ```
-3. Register it in `wled00/usermods_list.cpp` — add the include near the other
-   usermod includes:
-   ```cpp
-   #include "../usermods/pc-power-led-usermod/usermod_pc_power_led.h"
-   ```
-   and inside `registerUsermods()`:
-   ```cpp
-   usermods.add(new PcPowerLedUsermod());
-   ```
-   (On WLED versions that use the `REGISTER_USERMOD` macro you can instead add
-   `static PcPowerLedUsermod pc_power_led; REGISTER_USERMOD(pc_power_led);` at
-   the bottom of the header and skip this step.)
-4. Build and flash for your board — check `platformio.ini` for the ESP32-C3
-   environment name:
-   ```bash
-   pio run -e esp32c3dev -t upload
+   git clone --branch v16.0.1 --depth 1 https://github.com/wled/WLED.git && cd WLED
    ```
 
-Optionally override the default pins at build time with
-`-D PCPLED_SENSE_PIN=5 -D PCPLED_LED_PIN=6`.
+3. **Drop this folder in** — the directory name is what you enable in step 4:
+   ```bash
+   cp -r <this-repo>/firmware/pc_power_led usermods/
+   ```
+
+4. **Enable it** in `platformio.ini`, in the environment you build. For the
+   ESP32-C3 that is `[env:esp32c3dev]`; add it alongside what's already there:
+   ```ini
+   custom_usermods = audioreactive pc_power_led
+   ```
+   (Keep `audioreactive` if you want to retain the stock build's feature set.)
+
+5. **Build and flash** over the USB cable:
+   ```bash
+   ~/.platformio-venv/bin/pio run -e esp32c3dev -t upload --upload-port /dev/ttyACM0
+   ```
+
+Your settings live in the filesystem partition, so an upgrade flash normally
+keeps the LED configuration you already set. Optionally override the default
+pins at build time with `-D PCPLED_SENSE_PIN=5 -D PCPLED_LED_PIN=6`.
+
+Note that the stock `esp32c3dev` environment already sets
+`-DARDUINO_USB_CDC_ON_BOOT=1`, which is what makes WLED's serial (and therefore
+OpenRGB's Adalight input) work over the board's native USB.
 
 ## Settings
 
@@ -86,11 +98,11 @@ for a blink. Expect state changes to settle within about 3 seconds.
 
 ## Status
 
-The code is written against the WLED usermod v2 API and syntax-checks clean
-(`-Wall -Wextra`), but it has **not been compiled against real WLED headers or
-run on hardware** — treat the first flash as the real test. If your board's PLED
-does not blink in sleep (some don't), this usermod has nothing to de-flash;
-check the Info panel to see what it detects.
+Written against the WLED v16 usermod API and syntax-checked clean
+(`-Wall -Wextra`) against a stub, but **not yet compiled against real WLED
+headers or run on hardware** — treat the first build as the real test. If your
+board's PLED does not blink in sleep (some don't), this has nothing to de-flash;
+the Info panel will show what it detects.
 
-Note that the indicator only does anything during sleep if the ESP stays powered
-— USB standby on, ErP/deep-sleep off in the BIOS.
+The indicator only does anything during sleep if the ESP stays powered — USB
+standby on, ErP/deep-sleep off in the BIOS.

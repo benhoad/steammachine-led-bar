@@ -308,7 +308,10 @@ def cmd_status(args: argparse.Namespace) -> int:
         try:
             backend = create_backend(config)
             backend.open()
-            print(f"selected: {backend.describe()}" if backend.healthy else "selected: (could not prepare device)")
+            if backend.healthy:
+                print(f"selected: {backend.describe()}")
+            else:
+                print(f"selected: none - {backend.last_error or 'could not prepare device'}")
             backend.close(None, "hold")
         except BackendError as exc:
             print(f"selection error: {exc}")
