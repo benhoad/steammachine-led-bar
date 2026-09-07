@@ -78,6 +78,20 @@ Connections:
 | ESP **USB-C** | internal USB 2.0 header (via a 9-pin→USB-A adapter) | powers the ESP + serial to the PC |
 | **1000 µF cap** (optional) | across strip 5 V / GND near LED 1 | inrush protection |
 | **74AHCT125** (optional) | in the data line | 3.3 → 5 V level shift, only if you see flicker |
+| **1N400x diode** ×1–2 (optional) | in series on the strip's 5 V | drops ~0.6–1.2 V so 3.3 V data clears spec, an alternative to the shifter |
+
+ESP32-C3 Super Mini pins used (**verify against your board's silkscreen —
+clone layouts vary**):
+
+| Pin | Connect to |
+|---|---|
+| **GPIO4** | 330 Ω → strip **DIN** (data) |
+| **GND** | strip GND **and** ARGB header GND (common ground) |
+| **USB-C** | internal USB 2.0 header (powers the ESP + serial to the PC) |
+| **5V** | leave unused, unless you add a level shifter, then its VCC |
+
+Avoid **GPIO8** (onboard LED) and **GPIO9** (BOOT button) for the data line —
+they're strapping pins. GPIO4 is a safe choice; GPIO10 also works.
 
 - Controller data GPIO → a **~330 Ω resistor** → strip **DIN** (the arrow on the
   strip points away from DIN; data flows one way).
@@ -244,6 +258,44 @@ indicator" logic itself is custom). Sketch of the usermod:
   is asleep when it matters. If you'd rather not compile a usermod, a tiny
   separate microcontroller doing only this is fully decoupled.
 
+**Wiring (ESP32-C3 Super Mini)**
+
+GPIO4 is already the strip data, so take two more from the free, non-strapping
+pool (**GPIO3, GPIO5, GPIO6, GPIO7, GPIO10**):
+
+| Function | Pin | Direction |
+|---|---|---|
+| PLED sense | **GPIO5** | input |
+| Indicator LED | **GPIO6** | output |
+
+**Ground:** everything shares one ground. The ESP is USB-powered from the PC, so
+its GND *is* the motherboard's ground — the same net as `PLED−` and the
+indicator LED's cathode. Ground is therefore not the design problem here; the
+**PLED+ voltage** is, because the C3's pins are **not 5 V tolerant**.
+
+Indicator LED (output):
+
+```
+GPIO6 ──[220–470 Ω]──►|── GND        (330 Ω ≈ 5 mA, well within the pin's limit)
+                     LED
+```
+
+PLED sense (input) — **measure `PLED+` to `PLED−` with the PC on first**:
+
+| PLED+ | Wiring |
+|---|---|
+| **~3.3 V** (most boards) | `PLED+ → 1 kΩ → GPIO5`, `PLED− → ESP GND`, plus **100 kΩ GPIO5 → GND** so "off" reads a clean low |
+| **5 V** | divider: `PLED+ → 10 kΩ → GPIO5`, `GPIO5 → 15 kΩ → GND` (≈3 V), `PLED− → ESP GND` |
+| **unknown / want margin** | optocoupler across the PLED, output transistor pulls GPIO5 with a pull-up to 3V3 (inverted logic in firmware) |
+
+**Ready-made usermod:** the firmware for exactly this lives in
+[`firmware/pc-power-led-usermod/`](../firmware/pc-power-led-usermod/) — the usermod
+source plus build and settings instructions.
+
+You can tap the PLED in parallel with the real front-panel LED or replace it.
+Check the board manual for `PLED+` polarity. And remember this only does anything
+during sleep if the ESP stays powered — USB standby on, ErP/deep-sleep off.
+
 ## What each option shows
 
 | | PC on | PC asleep | PC off |
@@ -251,3 +303,26 @@ indicator" logic itself is custom). Sketch of the usermod:
 | Option 1 (strip LED, ledbar) | white / red per state | solid or off (held frame), if strip powered in standby | off (rail cut) |
 | Option 2 (dumb PLED LED) | solid | **blink** (board default) | off |
 | Option 3 (ESP de-flashes PLED) | solid | solid / off / your pattern | off |
+
+# Complete build — net list
+
+Everything above in one place, for the recommended build: ESP32-C3 Super Mini,
+strip powered from the ARGB header, discrete indicator LED with a **3.3 V**
+PLED header.
+
+| Net | From | To | Notes |
+|---|---|---|---|
+| **+5 V (LEDs)** | ARGB header **5 V** | strip **5 V** | header typically rated ~3 A; 24 WS2812B peak ~1.44 A |
+| **Bar data** | ESP **GPIO4** | **330 Ω** → strip **DIN** | 3.3 V data; add a 74AHCT125 or a 1N400x in the strip's 5 V only if you see flicker |
+| **ESP power + serial** | USB 2.0 header | ESP **USB-C** | via a 9-pin header → USB-A adapter |
+| **PLED sense** | **PLED+** (3.3 V) | **1 kΩ** → ESP **GPIO5** | plus **100 kΩ** from GPIO5 to GND so "off" reads low |
+| **Indicator** | ESP **GPIO6** | **330 Ω** → LED anode | LED cathode to GND |
+| **Ground** | ARGB GND · PLED− · strip GND · LED cathode · ESP GND | one net | already shared through the USB cable |
+| **Unused** | ARGB header **DATA** | — | leave disconnected, so the board's controller can't fight the ESP |
+
+Optional: a **1000 µF** capacitor across the strip's 5 V/GND near the first LED.
+
+Sanity checks before powering on: `PLED+` really is 3.3 V (a 5 V one needs a
+divider — C3 pins are not 5 V tolerant), the ARGB header's data pin is not
+connected to anything, and the strip's DIN is at the end of the chain the arrows
+point away from.
