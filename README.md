@@ -174,6 +174,24 @@ mode = "same"         # "off" or "dim" while a game is running
 warning_c = 90        # amber breathing above this temperature (0 = off)
 ```
 
+### Smooth progress (optional)
+
+By default ledbar reads progress from Steam's `appmanifest` files. That needs no
+setup, but Steam only rewrites them **every few minutes**, so the bar advances in
+jumps rather than smoothly.
+
+For live, continuously updating progress, let ledbar read it from the Steam client
+itself. Enable Steam's debug interface once:
+
+```bash
+touch ~/.steam/steam/.cef-enable-remote-debugging
+```
+
+Restart Steam. ledbar picks it up automatically (`[steam] source = "auto"`, the
+default) and falls straight back to manifests if it's ever unavailable, so nothing
+breaks if you skip this or if a Steam update changes things. `ledbar status` shows
+which source is in use.
+
 For an advanced two-part layout like the Steam Machine (a progress bar plus a
 small status light), you can reserve the first LED(s) of the strip as a **power
 indicator**: set `offset` and `offset_mode = "power_led"` under `[leds]` (see the

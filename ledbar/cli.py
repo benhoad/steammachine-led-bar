@@ -244,6 +244,9 @@ def cmd_status(args: argparse.Namespace) -> int:
         stale_seconds=config.progress.stale_seconds,
         show_paused=config.progress.show_paused,
         require_steam_process=config.steam.require_process,
+        source=config.steam.source,
+        cef_host=config.steam.cef_host,
+        cef_port=config.steam.cef_port,
     )
     monitor.rescan_libraries()
     print("Steam:")
@@ -255,6 +258,18 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"  library: {library}")
     state = monitor.poll()
     print(f"  client running: {state.steam_running}")
+    if config.steam.source == "manifest":
+        print("  progress source: appmanifest files (coarse; set [steam] source for live progress)")
+    elif state.source == "cef":
+        print("  progress source: the Steam client, live (CEF)")
+    else:
+        from .steamcef import debugging_enabled
+
+        enabled = debugging_enabled(monitor.roots)
+        why = getattr(monitor.live, "last_error", "") or "not connected"
+        print(f"  progress source: appmanifest files - Steam client unavailable ({why})")
+        if enabled is False:
+            print("    enable live progress: touch ~/.steam/steam/.cef-enable-remote-debugging, restart Steam")
     if state.running_appid is not None:
         print(f"  game running: app {state.running_appid}")
     if state.active and state.app is not None:

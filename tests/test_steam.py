@@ -254,5 +254,75 @@ class MonitorTests(unittest.TestCase):
         self.assertAlmostEqual(self.monitor.poll().fraction, 0.75)
 
 
+class _StubLive:
+    """Stands in for the Steam client source."""
+
+    def __init__(self, progress):
+        self.progress = progress
+        self.last_error = ""
+
+    def poll(self):
+        return self.progress
+
+
+class LiveSourceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / "Steam"
+        self.steamapps = self.root / "steamapps"
+        self.steamapps.mkdir(parents=True)
+        (self.steamapps / "appmanifest_440.acf").write_text(MANIFEST % STATE_FULLY_INSTALLED)
+        self.monitor = SteamMonitor(extra_roots=[str(self.root)], require_steam_process=False)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def live(self, **kwargs):
+        from ledbar.steamcef import CefProgress
+
+        self.monitor.live = _StubLive(CefProgress(**kwargs))
+        return self.monitor.poll()
+
+    def test_live_progress_wins_and_names_the_app_from_the_manifest(self):
+        state = self.live(active=True, fraction=0.421, appid=440, state="Running")
+        self.assertEqual(state.source, "cef")
+        self.assertTrue(state.active)
+        self.assertAlmostEqual(state.fraction, 0.421)
+        self.assertEqual(state.app.name, "Team Fortress 2")   # resolved from the manifest
+        self.assertEqual(state.phase, "running")
+
+    def test_live_source_is_believed_when_it_says_idle(self):
+        """The client knows a download stopped before the manifest is rewritten."""
+        (self.steamapps / "appmanifest_10.acf").write_text(
+            MANIFEST.replace('"440"', '"10"') % (STATE_DOWNLOADING | STATE_UPDATE_STARTED | 6))
+        (self.steamapps / "downloading" / "10").mkdir(parents=True)
+        state = self.live(active=False)
+        self.assertEqual(state.source, "cef")
+        self.assertFalse(state.active)          # not overridden by the stale-ish manifest
+
+    def test_falls_back_to_manifests_when_the_client_is_unreachable(self):
+        self.monitor.live = _StubLive(None)
+        (self.steamapps / "appmanifest_10.acf").write_text(
+            MANIFEST.replace('"440"', '"10"') % (STATE_DOWNLOADING | STATE_UPDATE_STARTED | 6))
+        state = self.monitor.poll()
+        self.assertEqual(state.source, "manifest")
+        self.assertTrue(state.active)
+        self.assertAlmostEqual(state.fraction, 0.25)
+
+    def test_cef_only_does_not_fall_back(self):
+        monitor = SteamMonitor(extra_roots=[str(self.root)], require_steam_process=False, source="manifest")
+        monitor.source = "cef"
+        monitor.live = _StubLive(None)
+        (self.steamapps / "appmanifest_10.acf").write_text(
+            MANIFEST.replace('"440"', '"10"') % (STATE_DOWNLOADING | STATE_UPDATE_STARTED | 6))
+        self.assertFalse(monitor.poll().active)
+
+    def test_unknown_appid_still_gives_a_usable_app(self):
+        state = self.live(active=True, fraction=0.1, appid=999999, state="Running")
+        self.assertTrue(state.active)
+        self.assertEqual(state.app.appid, 999999)
+        self.assertIn("999999", state.app.name)
+
+
 if __name__ == "__main__":
     unittest.main()

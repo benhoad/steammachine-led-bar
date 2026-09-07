@@ -448,6 +448,7 @@ class DownloadState:
     running_appid: Optional[int] = None
     checked_at: float = 0.0
     libraries: list[Path] = field(default_factory=list)
+    source: str = "manifest"          # "manifest" or "cef" (the Steam client)
 
 
 class SteamMonitor:
@@ -461,12 +462,15 @@ class SteamMonitor:
     def __init__(
         self,
         extra_roots: Iterable[str] = (),
-        stale_seconds: float = 120.0,
+        stale_seconds: float = 600.0,
         show_paused: bool = False,
         rescan_interval: float = 30.0,
         process_interval: float = 2.0,
         require_steam_process: bool = True,
         proc_root: str = "/proc",
+        source: str = "manifest",
+        cef_host: str = "127.0.0.1",
+        cef_port: int = 8080,
     ) -> None:
         self.extra_roots = list(extra_roots)
         self.stale_seconds = stale_seconds
@@ -483,6 +487,12 @@ class SteamMonitor:
         self._steam_running = False
         self._running_appid: Optional[int] = None
         self.state = DownloadState()
+        self.source = source
+        self.live: Any = None
+        if source in ("auto", "cef"):
+            from .steamcef import CefDownloadSource
+
+            self.live = CefDownloadSource(host=cef_host, port=cef_port)
 
     # -- discovery ---------------------------------------------------------
 
@@ -504,7 +514,6 @@ class SteamMonitor:
             self._last_process_check = mono
 
         statuses = list(self._read_manifests())
-        chosen = self.select_active(statuses, wall)
 
         state = DownloadState(
             steam_running=self._steam_running,
@@ -512,6 +521,27 @@ class SteamMonitor:
             checked_at=wall,
             libraries=list(self.libraries),
         )
+
+        live = self.live.poll() if self.live is not None else None
+        if live is not None:
+            # The Steam client is authoritative: it knows about downloads whose
+            # manifests have not been rewritten yet, and knows when one stops.
+            state.source = "cef"
+            if live.active:
+                state.active = True
+                state.fraction = live.fraction
+                state.phase = live.state.lower() if live.state.lower() not in ("none", "") else "downloading"
+                state.paused = live.paused
+                state.app = self._app_for(statuses, live.appid)
+            self.state = state
+            return state
+
+        if self.source == "cef":
+            self.state = state          # live-only was requested but is unavailable
+            return state
+
+        state.source = "manifest"
+        chosen = self.select_active(statuses, wall)
         if chosen is not None:
             state.active = True
             state.app = chosen
@@ -520,6 +550,18 @@ class SteamMonitor:
             state.paused = chosen.is_paused
         self.state = state
         return state
+
+    def _app_for(self, statuses: list[AppStatus], appid: Optional[int]) -> Optional[AppStatus]:
+        """Match the client's appid to a manifest, for the name; synthesise if absent."""
+        if appid:
+            for status in statuses:
+                if status.appid == appid:
+                    return status
+        return AppStatus(
+            appid=appid or 0, name=f"app {appid}" if appid else "download", flags=0,
+            bytes_to_download=0, bytes_downloaded=0, bytes_to_stage=0, bytes_staged=0,
+            mtime=0.0, path=Path(f"<steam client:{appid or 0}>"),
+        )
 
     def _read_manifests(self) -> Iterable[AppStatus]:
         live: set[str] = set()

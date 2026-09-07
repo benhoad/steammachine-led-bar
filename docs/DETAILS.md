@@ -84,3 +84,33 @@ patterns lose their quadrant, but it is completely stable because it uses only
 the modes the controller supports natively, and it writes only when the state
 changes. To keep the true progress bar, use a dedicated controller
 (docs/CONTROLLERS.md).
+
+## Where download progress comes from
+
+Two sources, selected by `[steam] source` (default `"auto"`).
+
+**`appmanifest` files (always available).** Steam keeps an
+`appmanifest_<appid>.acf` per app and rewrites it as work proceeds. It needs no
+setup and no Steam configuration, but it is coarse: measured on a 65 GB install,
+Steam left `StateFlags` at **1026** (Update Required + Update Started) for the
+entire download without ever setting the `Downloading` bit, kept `BytesDownloaded`
+at **0** for minutes while preallocating, then jumped straight to 37.9 GB, and
+rewrote the file only every few minutes. ledbar therefore treats a corroborated
+1026 (a `downloading/<appid>` folder plus a manifest Steam is still touching) as a
+live download, shows a breathing animation rather than a 0% bar while the counters
+are zero, and uses a generous 10-minute staleness window so the bar does not drop
+out between writes.
+
+**The Steam client (opt-in).** Steam's UI is Chromium and its JS context exposes a
+real push API — `SteamClient.Downloads.RegisterForDownloadOverview` and
+`RegisterForDownloadItems` — which is what Steam's own download page renders from,
+and what a Steam Machine's LED bar uses natively. ledbar reaches it over CEF's
+remote debugging port, evaluating JS in `SharedJSContext` to register those
+callbacks and read the accumulated state. This gives smooth, continuously updating
+progress. It requires the user to enable debugging once
+(`touch ~/.steam/steam/.cef-enable-remote-debugging`, then restart Steam) and is
+tied to Steam internals Valve can rename, so it is strictly an enhancement: when
+it is unreachable, ledbar logs once and falls back to manifests.
+
+The CDP transport is a small built-in WebSocket client (`ledbar/steamcef.py`), so
+this adds no third-party dependency.

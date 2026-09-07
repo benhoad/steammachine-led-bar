@@ -101,6 +101,15 @@ paths = []                 # extra Steam roots, e.g. ["/run/media/ben/games/Stea
                            # listed in Steam's libraryfolders.vdf are found automatically)
 poll_interval = 1.0        # seconds between manifest checks
 require_process = true     # only report downloads while a Steam client process is running
+source = "auto"            # where download progress comes from:
+                           #   "auto"     - live from the Steam client when reachable, else manifests
+                           #   "manifest" - only appmanifest files: coarse (Steam rewrites them every few
+                           #                minutes, so the bar advances in jumps) but needs no setup
+                           #   "cef"      - only the Steam client, no fallback
+                           # Live progress needs Steam's debug interface enabled, once:
+                           #   touch ~/.steam/steam/.cef-enable-remote-debugging   (then restart Steam)
+cef_host = "127.0.0.1"
+cef_port = 8080            # Steam's CEF remote debugging port
 
 [thermal]
 # Steam Machine: "Red, solid - Overheating. CPU temp > 100C and/or GPU temp > 100C"

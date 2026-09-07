@@ -52,6 +52,9 @@ class LiveInputs(InputSource):
             stale_seconds=config.progress.stale_seconds,
             show_paused=config.progress.show_paused,
             require_steam_process=config.steam.require_process,
+            source=config.steam.source,
+            cef_host=config.steam.cef_host,
+            cef_port=config.steam.cef_port,
         )
         self.thermal = ThermalMonitor(config.thermal)
         self.faults = FaultMonitor(config.faults, lambda: list(self.steam.libraries))

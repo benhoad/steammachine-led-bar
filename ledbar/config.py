@@ -124,6 +124,12 @@ class SteamConfig:
     paths: list[str] = field(default_factory=list)  # extra Steam roots to scan
     poll_interval: float = 1.0
     require_process: bool = True    # only report downloads while a Steam process exists
+    source: str = "auto"            # where progress comes from:
+                                    #   "auto"     - the Steam client if reachable, else manifests
+                                    #   "manifest" - only appmanifest files (coarse, zero setup)
+                                    #   "cef"      - only the Steam client (no fallback)
+    cef_host: str = "127.0.0.1"
+    cef_port: int = 8080            # Steam's CEF remote debugging port
 
 
 @dataclass
@@ -346,6 +352,9 @@ def validate(config: Config) -> None:
     if not 1 <= leds.fps <= 120:
         raise ConfigError("[leds] fps must be between 1 and 120")
     _check_choice(config.output.backend, ("openrgb", "terminal", "null"), "[output] backend")
+    _check_choice(config.steam.source, ("auto", "manifest", "cef"), "[steam] source")
+    if not 1 <= config.steam.cef_port <= 65535:
+        raise ConfigError("[steam] cef_port must be between 1 and 65535")
     _check_choice(config.idle.mode, ("solid", "off", "breathe", "temperature"), "[idle] mode")
     _check_choice(config.game.mode, ("same", "off", "dim", "solid"), "[game] mode")
     _check_choice(config.progress.indeterminate, ("breathe", "off"), "[progress] indeterminate")
