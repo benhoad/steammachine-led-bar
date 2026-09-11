@@ -76,6 +76,42 @@ class CefDownloadSourceTests(unittest.TestCase):
         finally:
             server.stop()
 
+    def test_vague_activity_falls_back_to_manifests(self):
+        """Steam signalling 'downloading' with no app and no progress is not usable.
+
+        Trusting it paints a 0% bar, which looks identical to the strip being off.
+        """
+        vague = {"paused": False, "percent": 0, "appid": 0, "state": "Running", "rate": 0}
+        server = FakeCdpServer(overview=vague, downloading=True).start()
+        try:
+            source = CefDownloadSource(port=server.port, timeout=3.0)
+            self.assertIsNone(source.poll())        # None = let the manifests decide
+            self.assertTrue(source.available)       # but the connection is still fine
+        finally:
+            server.stop()
+
+    def test_named_app_at_zero_percent_is_indeterminate(self):
+        """A real download that has not reported bytes yet breathes, never a 0% bar."""
+        starting = {"paused": False, "percent": 0, "appid": 2552450, "state": "Running", "rate": 0}
+        server = FakeCdpServer(overview=starting, downloading=True).start()
+        try:
+            progress = CefDownloadSource(port=server.port, timeout=3.0).poll()
+            self.assertTrue(progress.active)
+            self.assertIsNone(progress.fraction)    # indeterminate, not zero
+            self.assertEqual(progress.appid, 2552450)
+        finally:
+            server.stop()
+
+    def test_transfer_rate_alone_counts_as_concrete(self):
+        moving = {"paused": False, "percent": 0, "appid": 0, "state": "Running", "rate": 5_000_000.0}
+        server = FakeCdpServer(overview=moving, downloading=True).start()
+        try:
+            progress = CefDownloadSource(port=server.port, timeout=3.0).poll()
+            self.assertIsNotNone(progress)
+            self.assertTrue(progress.active)
+        finally:
+            server.stop()
+
     def test_unavailable_when_nothing_is_listening(self):
         source = CefDownloadSource(port=1, timeout=0.5, retry_seconds=0.05)
         self.assertIsNone(source.poll())

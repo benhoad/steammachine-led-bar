@@ -296,6 +296,11 @@ READ_JS = """
 """ % _KEY
 
 
+# Whatever Steam calls "not doing anything".  The real values are undocumented,
+# so anything unrecognised counts as busy - but see the corroboration in poll().
+IDLE_STATES = frozenset({"none", "", "0", "idle", "notdownloading"})
+
+
 @dataclass
 class CefProgress:
     """What the Steam client says about the current download."""
@@ -330,6 +335,7 @@ class CefDownloadSource:
         self.last_error = ""
         self._next_attempt = 0.0
         self._registered = False
+        self._logged_vague = False
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -394,19 +400,36 @@ class CefDownloadSource:
             return None
 
         overview = data.get("overview") or {}
-        state = str(overview.get("state") or "None")
+        state = str(overview.get("state") or "None").strip()
         paused = bool(overview.get("paused"))
         appid = int(overview.get("appid") or 0) or None
-        fraction = _fraction_from_percent(float(overview.get("percent") or 0.0))
-        # "None" is Steam's idle state; items flag corroborates it
-        active = bool(data.get("downloading")) or (state.lower() not in ("none", "", "0"))
+        percent = float(overview.get("percent") or 0.0)
+        rate = float(overview.get("rate") or 0.0)
+
+        busy = data.get("downloading") is True or state.lower() not in IDLE_STATES
+        # Something we can actually show: a named app, real progress, or bytes moving.
+        concrete = appid is not None or percent > 0.0 or rate > 0.0
+
+        if busy and not concrete:
+            # Steam signals activity while naming no app and reporting no progress.
+            # Trusting that paints a 0% bar, which is indistinguishable from off,
+            # so treat this cycle as "no useful information" and let the manifest
+            # reader decide instead.
+            if not self._logged_vague:
+                log.info("Steam client reported activity with no app or progress (%s); using manifests", overview)
+                self._logged_vague = True
+            return None
+        self._logged_vague = False
+
         return CefProgress(
-            active=active and not (paused and state.lower() == "none"),
-            fraction=fraction if active else None,
+            active=busy,
+            # 0% means "started, nothing measured yet" - show the indeterminate
+            # animation rather than an empty bar, matching the manifest path
+            fraction=(_fraction_from_percent(percent) if percent > 0.0 else None) if busy else None,
             appid=appid,
             paused=paused,
             state=state,
-            rate_bytes_per_second=float(overview.get("rate") or 0.0),
+            rate_bytes_per_second=rate,
         )
 
     def close(self) -> None:
