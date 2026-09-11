@@ -114,3 +114,64 @@ it is unreachable, ledbar logs once and falls back to manifests.
 
 The CDP transport is a small built-in WebSocket client (`ledbar/steamcef.py`), so
 this adds no third-party dependency.
+
+## OS updates
+
+`[updates] system = true` watches for the OS updating itself. The signal is
+simply whether the updater's systemd unit is running — `uupd.service` on Bazzite,
+plus `bootc-fetch-apply-updates.service` and `rpm-ostreed-automatic.service`, and
+anything extra listed in `[updates] units`.
+
+The presentation depends on whether a status indicator exists.
+
+**With an indicator** (`[leds] offset_mode = "power_led"` and a non-zero `offset`,
+on a backend that can actually address it) ledbar copies the Steam Machine: a
+firmware update there renders with the *same* filling blue bar as a content
+download, and the only difference is the small indicator LED — blue for the update,
+white for a download. ledbar keeps the bar identical and switches the indicator to
+`[indicator] update_color`, which defaults to the bar colour.
+
+**Without an indicator** that trick is unavailable, and an OS update would be
+indistinguishable from a game download. So the bar **blinks** instead. The daemon
+decides this at startup and tells the state machine (`StateMachine.has_indicator`),
+which also covers whole-strip/basic mode, where the indicator LEDs cannot be
+addressed separately even if they are configured.
+
+An OS update outranks a game download in the priority order, but still loses to
+overheating and hardware faults.
+
+A real percentage is not currently shown: rpm-ostree publishes transaction
+progress over D-Bus, but that surface is shifting as Universal Blue migrates to
+bootc, so ledbar reports a fraction only if something hands it one and otherwise
+shows the indeterminate breathing animation. Detection is deliberately the
+robust part; progress is the optional part.
+
+## Link health
+
+Adalight is one-way: the controller never acknowledges anything, so
+`backend.write()` returning True only means OpenRGB accepted the bytes. If the
+controller stops consuming them the whole stack still looks healthy while the
+strip sits frozen — which is exactly what happens when an ESP32's native USB
+endpoint wedges after the host reboots while the board stays powered by USB
+standby.
+
+`[health]` closes that blind spot. While ledbar believes it is streaming, it
+polls the controller's `/json/info` on a background thread (never the render
+loop) and checks that `live` is true. Being unable to reach the controller is
+deliberately *not* treated as a fault, so a Wi-Fi blip does not raise a false
+alarm; only a reachable controller reporting no realtime source does, and only
+after `grace_seconds`.
+
+`action = "warn"` (the default) logs it and reports it in `ledbar status`. It
+cannot be shown on the bar, because the bar is the broken thing.
+
+`action = "reset"` also recovers: it reboots the controller over HTTP and then
+runs `restart_command` so OpenRGB reopens the re-enumerated serial port, which it
+will not do on its own. Recovery goes over the network rather than the serial
+link on purpose — in the failure being detected, the controller is not reading
+serial at all, so a serial command would vanish into the same void as the pixel
+data. Resets are capped at `max_resets_per_hour` so a persistent fault cannot
+become a reboot loop.
+
+The controller address comes from `[health] host`, or from mDNS discovery
+(`_wled._tcp` via `avahi-browse`) when that is left empty.

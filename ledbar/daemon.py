@@ -15,12 +15,14 @@ from pathlib import Path
 from typing import Optional
 
 from .backends.base import Backend, BackendError
+from .health import LinkHealthMonitor
 from .colors import RGB8
 from .config import Config
 from .power import PowerMonitor
 from .render import Compositor, FrameShaper
 from .sensors import FaultMonitor, ThermalMonitor
 from .state import Inputs, StateMachine, indicator_color
+from .updates import SystemUpdateMonitor
 from .steam import DownloadState, SteamMonitor
 
 log = logging.getLogger("ledbar.daemon")
@@ -59,6 +61,11 @@ class LiveInputs(InputSource):
         self.thermal = ThermalMonitor(config.thermal)
         self.faults = FaultMonitor(config.faults, lambda: list(self.steam.libraries))
         self.power = PowerMonitor(config.power.monitor)
+        self.updates = SystemUpdateMonitor(
+            enabled=config.updates.system,
+            units=config.updates.units,
+            poll_interval=config.updates.poll_interval,
+        )
         self._last_steam = -1e9
         self._steam_state = DownloadState()
 
@@ -83,6 +90,7 @@ class LiveInputs(InputSource):
             self._last_steam = now
         self.thermal.poll(now)
         faults = self.faults.poll(now)
+        update = self.updates.poll(now)
         return Inputs(
             now=now,
             steam=self._steam_state,
@@ -91,6 +99,7 @@ class LiveInputs(InputSource):
             faults=faults,
             sleeping=self.power.sleeping,
             shutting_down=self.power.shutting_down,
+            system_update=update,
         )
 
     def take_resume_event(self) -> bool:
@@ -118,6 +127,16 @@ class Daemon:
         self.machine: Optional[StateMachine] = None
         self.last_sent: Optional[list[RGB8]] = None
         self.frames_sent = 0
+        self.health = LinkHealthMonitor(
+            enabled=config.health.enabled,
+            host=config.health.host,
+            check_interval=config.health.check_interval,
+            grace_seconds=config.health.grace_seconds,
+            action=config.health.action,
+            max_resets_per_hour=config.health.max_resets_per_hour,
+            restart_command=config.health.restart_command,
+            timeout=config.health.timeout,
+        )
 
     # -- signals -----------------------------------------------------------
 
@@ -139,6 +158,7 @@ class Daemon:
         self.backend.open()
         log.info("output: %s", self.backend.describe())
         self.inputs.start()
+        self.health.start()
 
         start = time.monotonic()
         self.machine = StateMachine(cfg, start)
@@ -147,6 +167,8 @@ class Daemon:
         if self._power_led and self.backend.mode_based:
             log.warning("[leds] offset_mode = 'power_led' needs per-LED control; ignored in whole-strip mode")
             self._power_led = False
+        # without an indicator LED, an OS update blinks the bar instead
+        self.machine.has_indicator = self._power_led
         last_send_time = -1e9
         last_status = None
         last_scene = None
@@ -167,6 +189,7 @@ class Daemon:
                     self.machine.restart_boot(now)
 
             inputs = self.inputs.poll(now)
+            self.health.set_streaming(self.backend.healthy and not inputs.sleeping and not inputs.shutting_down)
             decision = self.machine.update(inputs)
             scene = decision.scene
 
@@ -221,4 +244,5 @@ class Daemon:
                 final = [(0, 0, 0)] * self.shaper.total
             self.backend.close(final, on_exit)
         finally:
+            self.health.stop()
             self.inputs.stop()

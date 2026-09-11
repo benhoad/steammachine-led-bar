@@ -23,6 +23,7 @@ from .config import Config
 from .render import Scene
 from .sensors import Fault
 from .steam import DownloadState
+from .updates import SystemUpdate
 
 
 @dataclass
@@ -34,6 +35,7 @@ class Inputs:
     faults: list[Fault] = field(default_factory=list)
     sleeping: bool = False
     shutting_down: bool = False
+    system_update: SystemUpdate = field(default_factory=SystemUpdate)
 
 
 @dataclass
@@ -68,6 +70,10 @@ class StateMachine:
         self.critical = Threshold(config.thermal.critical_c, config.thermal.hysteresis_c)
         self.warning = Threshold(config.thermal.warning_c, config.thermal.hysteresis_c)
         self.boot_active = config.boot.enabled
+        # Whether a status indicator exists to carry the "this is the OS, not a
+        # game" signal.  The daemon overrides this once it knows the backend can
+        # actually address the indicator LEDs.
+        self.has_indicator = config.leds.offset_mode == "power_led" and config.leds.offset > 0
         self.boot_started = now
         self.progress_key: Optional[str] = None
         self.last_fraction: Optional[float] = None
@@ -160,6 +166,8 @@ class StateMachine:
                 Scene(kind="breathe", name="boot", color=self.c_boot, period=cfg.boot.period_seconds),
                 status=f"booting{waiting}",
             )
+        elif inputs.system_update.active:
+            decision = self._system_update_decision(inputs.system_update)
         elif active and steam.app is not None:
             decision = self._progress_decision(steam)
         elif now < self.complete_until:
@@ -199,6 +207,32 @@ class StateMachine:
             level=level,
         )
         return Decision(scene, fill_key=self.progress_key, status=f"{label} {steam.fraction * 100:.0f}%")
+
+    def _system_update_decision(self, update: SystemUpdate) -> Decision:
+        """How an OS update looks depends on whether there is an indicator LED.
+
+        With one, this mirrors the Steam Machine: the bar is identical to a
+        content download and the small indicator recolours to say it is the OS.
+        Without one there is no second light to carry that meaning, so the bar
+        blinks instead - otherwise an OS update would be indistinguishable from
+        a game download.
+        """
+        cfg = self.config
+        unit = f" ({update.unit})" if update.unit else ""
+
+        if not self.has_indicator:
+            scene = Scene(kind="blink", name="system-update", color=self.c_bar, period=1.5)
+            return Decision(scene, fill_key="system-update", status=f"system update{unit}")
+
+        if update.fraction is None:
+            scene = Scene(kind="breathe", name="system-update", color=self.c_bar, period=2.0, floor=0.2)
+            return Decision(scene, fill_key="system-update", status=f"system update{unit}")
+        scene = Scene(
+            kind="fill", name="system-update", color=self.c_bar, fraction=update.fraction,
+            track=self.c_track, head_glow=cfg.progress.head_glow,
+        )
+        return Decision(scene, fill_key="system-update",
+                        status=f"system update{unit} {update.fraction * 100:.0f}%")
 
     def _game_decision(self, appid: int) -> Decision:
         cfg = self.config
@@ -252,4 +286,6 @@ def indicator_color(decision: "Decision", config: Config) -> Optional[RGB]:
         return scale(parse_hex(fault), level)
     if name == "thermal-warning":
         return scale(parse_hex(config.colors.warning), level)
+    if name == "system-update":
+        return scale(parse_hex(ind.update_color or config.colors.bar), level)
     return scale(parse_hex(ind.color), level)

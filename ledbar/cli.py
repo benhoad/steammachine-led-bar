@@ -297,9 +297,34 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"  {sensor}")
     if not thermal.sensors:
         print("  no hwmon sensors found")
+    from .updates import SystemUpdateMonitor
+
+    updates = SystemUpdateMonitor(enabled=config.updates.system, units=config.updates.units).poll(force=True)
+    if config.updates.system:
+        print(f"System updates: {'RUNNING (' + updates.unit + ')' if updates.active else 'idle'}")
+    else:
+        print("System updates: not watched ([updates] system = false)")
     faults = FaultMonitor(config.faults, lambda: list(monitor.libraries)).poll(force=True)
     print(f"Faults: {', '.join(f.message for f in faults) if faults else 'none'}"
           f" (disk_space={'on' if config.faults.disk_space else 'off'}, failed_units={'on' if config.faults.failed_units else 'off'})")
+    if config.health.enabled:
+        from .health import LinkHealthMonitor
+
+        health = LinkHealthMonitor(
+            enabled=True, host=config.health.host, grace_seconds=config.health.grace_seconds,
+            action="warn", timeout=config.health.timeout,
+        )
+        health.set_streaming(False)          # status is a snapshot, not a stream
+        hstate = health.check()
+        if not hstate.host:
+            print("Link health: no controller address (set [health] host, or install avahi for discovery)")
+        elif hstate.checked:
+            print(f"Link health: {hstate.host} reachable"
+                  + ("" if hstate.healthy else f" - UNHEALTHY: {hstate.reason}"))
+        else:
+            print(f"Link health: {hstate.reason or 'could not reach the controller'}")
+    else:
+        print("Link health: not checked ([health] enabled = false)")
     tool = "gdbus" if shutil.which("gdbus") else "busctl" if shutil.which("busctl") else "none"
     print(f"Sleep/shutdown detection: {tool}")
     print()

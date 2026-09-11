@@ -30,7 +30,35 @@ color = "#ffffff"     # normal colour (white)
 fault_color = ""      # overheat/fault colour; "" = [colors] error (red)
 brightness = 100      # percent of [leds] brightness
 sleep = "solid"       # what to leave showing going into sleep: "solid" | "off"
+update_color = ""     # colour while the OS updates; "" = [colors] bar. The Steam Machine keeps the
+                      # bar identical to a download and turns its small indicator blue instead.
                       # (a strip that holds its last frame keeps this lit while the PC sleeps)
+
+
+[updates]
+# Bazzite updates itself in the background (uupd.timer) and applies on reboot.
+# Without a status indicator the bar BLINKS, so an OS update cannot be mistaken
+# for a game download. If [leds] offset_mode = "power_led", the bar instead looks
+# exactly like a download and the indicator recolours ([indicator] update_color) -
+# which is how a Steam Machine distinguishes a firmware update from a download.
+system = false        # watch for OS updates
+units = []            # extra systemd units to treat as an update; [] = uupd / bootc / rpm-ostreed
+poll_interval = 5.0
+
+
+[health]
+# Adalight is one-way: the controller never acknowledges anything, so ledbar
+# cannot otherwise tell that its frames are being dropped. WLED reports whether
+# it is receiving realtime data, so ledbar can check and say so rather than
+# sitting there silently driving a frozen strip.
+enabled = true
+host = ""                  # controller address, e.g. "10.0.20.97"; "" = try mDNS discovery
+check_interval = 30.0
+grace_seconds = 60.0       # only complain after this long with no liveness
+action = "warn"            # "warn" = log it, "reset" = reboot the controller and reopen the port
+max_resets_per_hour = 3
+restart_command = "systemctl --user restart ledbar-openrgb"
+timeout = 3.0
 
 [output]
 backend = "openrgb"   # "openrgb" = real hardware, "terminal" = simulate in the terminal, "null" = nothing

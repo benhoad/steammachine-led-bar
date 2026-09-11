@@ -11,6 +11,7 @@ from .daemon import InputSource
 from .sensors import Fault
 from .state import Inputs
 from .steam import STATE_COMMITTING, STATE_DOWNLOADING, STATE_STAGING, STATE_UPDATE_STARTED, AppStatus, DownloadState
+from .updates import SystemUpdate
 
 DEMO_FAULTS = {
     "fault-memtrain": Fault("memtrain", "left_half", "(demo) memory training failed"),
@@ -19,7 +20,7 @@ DEMO_FAULTS = {
     "fault-ram": Fault("ram", "q4", "(demo) RAM not detected"),
 }
 
-STATE_NAMES = ["boot", "idle", "download", "complete", "install", "warning", "critical",
+STATE_NAMES = ["boot", "idle", "download", "complete", "install", "system-update", "warning", "critical",
                "fault-memtrain", "fault-ssd", "fault-gpu", "fault-ram", "game", "sleep"]
 
 
@@ -37,6 +38,7 @@ def default_script(config: Config) -> list[Step]:
         Step("complete", 3.0),
         Step("install", 5.0),
         Step("complete", 2.5),
+        Step("system-update", 5.0),
     ]
     if config.thermal.warning_c > 0:
         steps.append(Step("warning", 4.0))
@@ -110,6 +112,8 @@ class ScriptedInputs(InputSource):
             done = int(total * progress)
             app = _fake_app(620, "Demo Update", STATE_STAGING | STATE_UPDATE_STARTED | 6, done, total, staging=True)
             steam.active, steam.app, steam.fraction, steam.phase = True, app, progress, "installing"
+        elif name == "system-update":
+            inputs.system_update = SystemUpdate(active=True, unit="uupd.service", fraction=progress)
         elif name == "warning":
             inputs.cpu_temp = max(cfg.thermal.warning_c, 1.0) + 2.0
         elif name == "critical":

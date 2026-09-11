@@ -199,6 +199,31 @@ indicator**: set `offset` and `offset_mode = "power_led"` under `[leds]` (see th
 including a plain power-LED on the motherboard header, are in
 [docs/CONTROLLERS.md](docs/CONTROLLERS.md#status--power-indicator-optional).
 
+### OS updates
+
+Bazzite updates itself in the background (`uupd.timer`) and applies on reboot.
+ledbar can show that too:
+
+```toml
+[updates]
+system = true
+```
+
+What you see depends on whether you have a status indicator:
+
+- **No indicator (the usual setup):** the bar **blinks** in the bar colour. Without
+  a second light to carry the meaning, blinking is what keeps an OS update from
+  looking identical to a game download.
+- **With an indicator** (`offset` plus `offset_mode = "power_led"`): the bar behaves
+  exactly as it does for a Steam download and the **indicator turns blue** instead of
+  white. That's how a real Steam Machine distinguishes a firmware update from a
+  content download — the bar is identical, only the small light changes.
+
+An OS update takes priority over a game download, since it's the one you don't want
+to reboot through. It still loses to overheating and hardware faults. Note there's no
+percentage: the Bazzite updater doesn't publish one, so ledbar shows a fill only if
+something hands it a fraction.
+
 ## Optional: the power-LED indicator (WLED usermod)
 
 If you drive the strip with an ESP running WLED, you can also have it read the
@@ -275,6 +300,13 @@ Wiring, settings and troubleshooting:
   `test -w /dev/ttyACM0`. OpenRGB lists a serial device even when it can't open the port, so
   everything looks fine while writes fail. Fix with `sudo usermod -aG dialout $USER` then reboot,
   or `bash install.sh --udev` for the udev-rule route.
+- **The bar freezes and ledbar still says "connected" (USB/serial controller).** Adalight is one-way,
+  so ledbar cannot see that its frames are being dropped. The usual cause is an ESP whose USB endpoint
+  wedged because the PC rebooted while the board stayed powered on USB standby. Check with
+  `curl -s http://<controller>/json/info | tr ',' '\n' | grep live` — `live:false` while ledbar is
+  running means the frames are going nowhere. Reboot the controller (`curl -s http://<controller>/reset`)
+  then `systemctl --user restart ledbar-openrgb ledbar`. Set `[health] host` to have ledbar watch for
+  this, and `action = "reset"` to have it recover on its own.
 - **Wrong colours or backwards bar.** Re-run `ledbar identify` and fix `color_order` / `reverse` / `offset` in the config.
 - **Bar stays breathing.** It waits up to 90 s for Steam to start. Set `wait_for_steam = false` under `[boot]` if you don't start Steam at login.
 - **Nothing during a download.** `ledbar status` lists the manifests it sees. Libraries on other drives are found automatically; unusual locations go in `[steam] paths`.

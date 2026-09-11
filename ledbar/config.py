@@ -165,10 +165,30 @@ class PowerConfig:
 
 
 @dataclass
+class HealthConfig:
+    enabled: bool = True
+    host: str = ""                  # controller address for liveness checks; "" = try mDNS
+    check_interval: float = 30.0
+    grace_seconds: float = 60.0     # only unhealthy after this long with no liveness
+    action: str = "warn"            # "warn" (log it) or "reset" (reboot the controller)
+    max_resets_per_hour: int = 3
+    restart_command: str = "systemctl --user restart ledbar-openrgb"
+    timeout: float = 3.0
+
+
+@dataclass
+class UpdatesConfig:
+    system: bool = False            # show OS updates (Bazzite uupd / rpm-ostree / bootc)
+    units: list[str] = field(default_factory=list)   # extra systemd units; [] = the usual ones
+    poll_interval: float = 5.0
+
+
+@dataclass
 class IndicatorConfig:
     color: str = "#ffffff"          # normal indicator colour (Steam Machine indicator = white)
     fault_color: str = ""           # overheat/fault colour; "" = [colors] error
     brightness: int = 100           # percent of [leds] brightness for the indicator LEDs
+    update_color: str = ""          # while an OS update runs; "" = [colors] bar (Steam Machine: blue)
     sleep: str = "solid"            # what the indicator shows going into sleep: "solid" | "off"
                                     # (a strip that holds its last frame keeps showing this during sleep)
 
@@ -177,6 +197,8 @@ class IndicatorConfig:
 class Config:
     leds: LedsConfig = field(default_factory=LedsConfig)
     indicator: IndicatorConfig = field(default_factory=IndicatorConfig)
+    updates: UpdatesConfig = field(default_factory=UpdatesConfig)
+    health: HealthConfig = field(default_factory=HealthConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     openrgb: OpenRGBConfig = field(default_factory=OpenRGBConfig)
     colors: ColorsConfig = field(default_factory=ColorsConfig)
@@ -209,6 +231,8 @@ class Config:
 _SECTIONS = {
     "leds": LedsConfig,
     "indicator": IndicatorConfig,
+    "updates": UpdatesConfig,
+    "health": HealthConfig,
     "output": OutputConfig,
     "openrgb": OpenRGBConfig,
     "colors": ColorsConfig,
@@ -353,6 +377,7 @@ def validate(config: Config) -> None:
         raise ConfigError("[leds] fps must be between 1 and 120")
     _check_choice(config.output.backend, ("openrgb", "terminal", "null"), "[output] backend")
     _check_choice(config.steam.source, ("auto", "manifest", "cef"), "[steam] source")
+    _check_choice(config.health.action, ("warn", "reset"), "[health] action")
     if not 1 <= config.steam.cef_port <= 65535:
         raise ConfigError("[steam] cef_port must be between 1 and 65535")
     _check_choice(config.idle.mode, ("solid", "off", "breathe", "temperature"), "[idle] mode")
@@ -363,7 +388,7 @@ def validate(config: Config) -> None:
     _check_choice(config.indicator.sleep, ("solid", "off"), "[indicator] sleep")
     if not 0 <= config.indicator.brightness <= 100:
         raise ConfigError("[indicator] brightness must be between 0 and 100")
-    for cname in ("color", "fault_color"):
+    for cname in ("color", "fault_color", "update_color"):
         value = getattr(config.indicator, cname)
         if value or cname == "color":
             try:
