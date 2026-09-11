@@ -109,3 +109,23 @@ def configure(host: str, total: int, pin: Optional[int] = None, dry_run: bool = 
     if isinstance(result, dict) and result.get("success") is False:
         raise RuntimeError(f"WLED rejected the configuration: {result}")
     return changes
+
+
+def set_idle_color(host: str, color: tuple[int, int, int],
+                   post: Optional[Callable[[str, dict, float], dict]] = None,
+                   timeout: float = 5.0) -> None:
+    """Set what WLED shows when ledbar is not streaming.
+
+    WLED falls back to its own colour once realtime data stops - going into
+    sleep, while ledbar is restarting, or during the gap after a wake.  Its
+    factory default is amber (#FFAA00), which is startling on a bar that should
+    be dark.  ledbar pushes this rather than relying on WLED to persist it,
+    because WLED only stores light state in presets and those cannot be saved
+    while realtime is active.
+
+    ``on`` is forced true: realtime cannot render while the master switch is off.
+    """
+    post = post or http_post
+    post(f"http://{host}/json/state",
+         {"on": True, "seg": [{"id": 0, "fx": 0, "col": [list(color), [0, 0, 0], [0, 0, 0]]}]},
+         timeout)

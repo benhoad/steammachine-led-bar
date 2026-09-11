@@ -46,6 +46,16 @@ units = []            # extra systemd units to treat as an update; [] = uupd / b
 poll_interval = 5.0
 
 
+[wled]
+# Settings ledbar pushes to a WLED controller, rather than relying on WLED to
+# remember them (it only persists light state in presets, and those cannot be
+# saved while realtime data is streaming).
+host = ""             # "" = use [health] host, then mDNS discovery
+idle_color = ""       # what WLED shows when ledbar is NOT streaming: going into sleep, while
+                      # ledbar restarts, and in the gap after waking. WLED's factory default is
+                      # amber (#FFAA00), which is startling on a bar that should be dark.
+                      # Set "#000000" to keep it dark. Re-applied whenever the controller reboots.
+
 [health]
 # Adalight is one-way: the controller never acknowledges anything, so ledbar
 # cannot otherwise tell that its frames are being dropped. WLED reports whether

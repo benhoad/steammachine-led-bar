@@ -201,6 +201,59 @@ class ResumeTests(unittest.TestCase):
         self.assertEqual(m.snapshot().last_live, 0.0)
 
 
+class IdleColourTests(unittest.TestCase):
+    """WLED forgets its idle colour on reboot, so ledbar re-pushes it."""
+
+    def setUp(self):
+        self.posts = []
+
+        def fake_set(host, color, timeout=5.0):
+            self.posts.append((host, color))
+
+        import ledbar.wledsetup as wledsetup
+        self._real = wledsetup.set_idle_color
+        wledsetup.set_idle_color = fake_set
+
+    def tearDown(self):
+        import ledbar.wledsetup as wledsetup
+        wledsetup.set_idle_color = self._real
+
+    def make(self, uptimes):
+        """A fetch whose reported uptime walks through the given values."""
+        seq = list(uptimes)
+
+        class Fetch:
+            urls = []
+
+            def __call__(self, url, timeout=3.0):
+                return {"live": True, "uptime": seq.pop(0) if seq else 0}
+
+        return monitor(Fetch(), idle_color=(0, 0, 0))
+
+    def test_pushed_on_first_contact(self):
+        m = self.make([100])
+        m.check(now=10.0)
+        self.assertEqual(self.posts, [("10.0.0.9", (0, 0, 0))])
+
+    def test_not_pushed_again_while_it_keeps_running(self):
+        m = self.make([100, 130, 160])
+        for t in (10.0, 40.0, 70.0):
+            m.check(now=t)
+        self.assertEqual(len(self.posts), 1)
+
+    def test_pushed_again_after_the_controller_reboots(self):
+        m = self.make([100, 130, 5])          # uptime goes backwards = it restarted
+        for t in (10.0, 40.0, 70.0):
+            m.check(now=t)
+        self.assertEqual(len(self.posts), 2)
+
+    def test_not_pushed_when_unset(self):
+        m = self.make([100])
+        m.idle_color = None
+        m.check(now=10.0)
+        self.assertEqual(self.posts, [])
+
+
 class HostTests(unittest.TestCase):
     def test_configured_host_wins(self):
         m = LinkHealthMonitor(host="1.2.3.4", fetch=FakeFetch(), discover=lambda: "9.9.9.9")

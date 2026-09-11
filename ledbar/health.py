@@ -73,7 +73,7 @@ class LinkHealthMonitor:
     def __init__(self, enabled: bool = True, host: str = "", check_interval: float = 30.0,
                  grace_seconds: float = 60.0, action: str = "warn", max_resets_per_hour: int = 3,
                  restart_command: str = "systemctl --user restart ledbar-openrgb",
-                 timeout: float = 3.0,
+                 timeout: float = 3.0, idle_color: Optional[tuple[int, int, int]] = None,
                  fetch: Optional[Callable[[str, float], dict]] = None,
                  runner: Optional[Callable[[list[str]], None]] = None,
                  discover: Optional[Callable[[], str]] = None) -> None:
@@ -85,6 +85,8 @@ class LinkHealthMonitor:
         self.max_resets_per_hour = max_resets_per_hour
         self.restart_command = restart_command
         self.timeout = timeout
+        self.idle_color = idle_color
+        self._last_uptime: Optional[float] = None
         self._fetch = fetch or fetch_json
         self._runner = runner or self._run
         self._discover = discover or discover_wled
@@ -151,6 +153,15 @@ class LinkHealthMonitor:
             # Can't tell - don't declare a fault on a Wi-Fi blip.
             return self.snapshot()
 
+        # The controller forgets its idle colour on reboot (WLED only persists
+        # light state in presets, which cannot be saved while realtime is live),
+        # so re-push it whenever the uptime goes backwards.
+        if self.idle_color is not None:
+            uptime = float(info.get("uptime") or 0.0)
+            if self._last_uptime is None or uptime < self._last_uptime:
+                self._push_idle_color(host)
+            self._last_uptime = uptime
+
         live = bool(info.get("live"))
         with self._lock:
             self.state.checked = True
@@ -184,6 +195,18 @@ class LinkHealthMonitor:
             self._attempt_reset(host, now)
         return self.snapshot()
 
+    def _push_idle_color(self, host: str) -> None:
+        """Tell the controller what to show when we are not streaming."""
+        if self.idle_color is None:
+            return
+        try:
+            from .wledsetup import set_idle_color
+
+            set_idle_color(host, self.idle_color, timeout=self.timeout)
+            log.info("health: set the controller's idle colour to #%02x%02x%02x", *self.idle_color)
+        except Exception as exc:
+            log.debug("health: could not set the idle colour: %s", exc)
+
     # -- recovery ----------------------------------------------------------
 
     def _attempt_reset(self, host: str, now: float) -> None:
@@ -210,6 +233,7 @@ class LinkHealthMonitor:
             except Exception as exc:
                 log.error("health: restart command failed: %s", exc)
 
+        self._last_uptime = None          # it rebooted: re-push the idle colour on the next check
         with self._lock:
             self.state.last_live = now + self.grace_seconds   # let it come back before judging again
 

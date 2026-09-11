@@ -127,9 +127,15 @@ class Daemon:
         self.machine: Optional[StateMachine] = None
         self.last_sent: Optional[list[RGB8]] = None
         self.frames_sent = 0
+        idle_color = None
+        if config.wled.idle_color:
+            from .colors import parse_hex, to_rgb8
+
+            idle_color = to_rgb8(parse_hex(config.wled.idle_color), gamma=1.0, brightness=1.0)
         self.health = LinkHealthMonitor(
             enabled=config.health.enabled,
-            host=config.health.host,
+            host=config.wled.host or config.health.host,
+            idle_color=idle_color,
             check_interval=config.health.check_interval,
             grace_seconds=config.health.grace_seconds,
             action=config.health.action,

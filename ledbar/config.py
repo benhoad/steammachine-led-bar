@@ -165,6 +165,14 @@ class PowerConfig:
 
 
 @dataclass
+class WledConfig:
+    host: str = ""                  # "" = use [health] host, then mDNS discovery
+    idle_color: str = ""            # what WLED shows when ledbar is not streaming.
+                                    # "" leaves it alone; "#000000" keeps the bar dark.
+                                    # Re-applied whenever the controller reboots.
+
+
+@dataclass
 class HealthConfig:
     enabled: bool = True
     host: str = ""                  # controller address for liveness checks; "" = try mDNS
@@ -202,6 +210,7 @@ class Config:
     indicator: IndicatorConfig = field(default_factory=IndicatorConfig)
     updates: UpdatesConfig = field(default_factory=UpdatesConfig)
     health: HealthConfig = field(default_factory=HealthConfig)
+    wled: WledConfig = field(default_factory=WledConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     openrgb: OpenRGBConfig = field(default_factory=OpenRGBConfig)
     colors: ColorsConfig = field(default_factory=ColorsConfig)
@@ -236,6 +245,7 @@ _SECTIONS = {
     "indicator": IndicatorConfig,
     "updates": UpdatesConfig,
     "health": HealthConfig,
+    "wled": WledConfig,
     "output": OutputConfig,
     "openrgb": OpenRGBConfig,
     "colors": ColorsConfig,
@@ -381,6 +391,11 @@ def validate(config: Config) -> None:
     _check_choice(config.output.backend, ("openrgb", "terminal", "null"), "[output] backend")
     _check_choice(config.steam.source, ("auto", "manifest", "cef"), "[steam] source")
     _check_choice(config.health.action, ("warn", "reset"), "[health] action")
+    if config.wled.idle_color:
+        try:
+            parse_hex(config.wled.idle_color)
+        except ValueError as exc:
+            raise ConfigError(f"[wled] idle_color: {exc}") from exc
     if not 1 <= config.steam.cef_port <= 65535:
         raise ConfigError("[steam] cef_port must be between 1 and 65535")
     _check_choice(config.idle.mode, ("solid", "off", "breathe", "temperature"), "[idle] mode")
