@@ -175,6 +175,32 @@ the device and ledbar streams happily, while every write silently fails and the 
 never change. If WLED's Info panel shows no realtime source (`live: false`) while
 ledbar says it is connected, check `test -w /dev/ttyACM0` first.
 
+**Configure WLED (one command)**
+
+WLED needs a specific set of settings for ledbar, and getting any of them wrong
+fails in a confusing way. Rather than clicking through the UI:
+
+```bash
+ledbar wled-setup --host <controller>        # --dry-run to preview
+```
+
+It reads WLED's config, changes only what it must, and reports each change. What
+it sets, and why each one matters:
+
+| Setting | Why |
+|---|---|
+| **Master on at boot** | realtime data **cannot render while WLED's master switch is off** - the strip stays dark no matter what ledbar sends |
+| **Force max brightness** | otherwise WLED scales ledbar's colours by its own brightness *on top of* ledbar's, dimming twice |
+| **Realtime gamma disabled** | ledbar already gamma-corrects; doing it twice crushes the low end, which is very visible at low brightness |
+| **Off refresh** | keeps clocking frames out, so a strip that loses power (an ARGB header is unpowered in sleep) repaints instead of latching the random state WS2812Bs wake up in |
+| **LED count** | matched to `count + offset` from your ledbar config |
+| **Max PSU current** | the 850 mA default silently dims a 24-LED bar; this clears the worst case |
+
+Add `--pin N` to set the data GPIO too. It deliberately leaves **colour order,
+reverse and skip** alone - ledbar handles direction itself, and setting both
+cancels out - and never touches WLED's brightness, because brightness 0 reads as
+"off" and blocks realtime entirely.
+
 **Point ledbar at it**
 
 - Turn basic mode back off: `whole_strip = false` under `[openrgb]` (or reinstall

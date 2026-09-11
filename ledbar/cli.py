@@ -359,6 +359,37 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_wled_setup(args: argparse.Namespace) -> int:
+    config = _load(args)
+    _setup_logging(args.log_level or "info", quiet_tty=False)
+    from .health import discover_wled
+    from .wledsetup import configure
+
+    host = args.host or config.health.host or discover_wled()
+    if not host:
+        print("No WLED address. Pass --host, or set [health] host in the config.", file=sys.stderr)
+        return 2
+
+    total = config.leds.total
+    print(f"WLED at {host}: applying the settings ledbar needs ({total} LEDs)")
+    try:
+        changes = configure(host, total, pin=args.pin, dry_run=args.dry_run)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if not changes:
+        print("  already correct, nothing to change")
+        return 0
+    for change in changes:
+        print(f"  {'would set' if args.dry_run else 'set'} {change}")
+    if args.dry_run:
+        print("(dry run - nothing was written)")
+    else:
+        print("Done. Colour order, reverse and skip were left alone: ledbar handles those.")
+    return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     if args.action == "path":
         print(DEFAULT_CONFIG_PATH if not args.config else Path(args.config).expanduser())
@@ -422,6 +453,12 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--loop", action="store_true", help="repeat forever")
     demo.add_argument("--list", action="store_true", help="list demo state names")
     demo.set_defaults(func=cmd_demo)
+
+    wled = sub.add_parser("wled-setup", help="apply the WLED settings ledbar needs", parents=[common])
+    wled.add_argument("--host", help="WLED address (default: [health] host, else mDNS discovery)")
+    wled.add_argument("--pin", type=int, help="also set WLED's data GPIO")
+    wled.add_argument("--dry-run", action="store_true", help="show what would change")
+    wled.set_defaults(func=cmd_wled_setup)
 
     config = sub.add_parser("config", help="manage the config file", parents=[common])
     config.add_argument("action", choices=["init", "show", "path", "check"])

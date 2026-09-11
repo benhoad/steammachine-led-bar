@@ -147,6 +147,7 @@ default host/port `127.0.0.1:6742`, and install ledbar with
 |---|---|
 | `ledbar status` | shows what it sees: Steam, temperatures, OpenRGB device |
 | `ledbar demo` | cycles through all patterns (`ledbar demo --list` for single states) |
+| `ledbar wled-setup` | applies the WLED settings ledbar needs (`--dry-run` to preview) |
 | `systemctl --user restart ledbar` | apply config changes |
 | `journalctl --user -u ledbar -f` | live log |
 | `bash uninstall.sh` | remove it (keeps your config unless `--purge`) |
