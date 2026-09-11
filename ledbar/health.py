@@ -123,9 +123,14 @@ class LinkHealthMonitor:
 
     # -- one check ---------------------------------------------------------
 
-    def check(self, now: Optional[float] = None) -> HealthState:
-        """Run a single liveness check (also the unit of work for the thread)."""
+    def check(self, now: Optional[float] = None, grace: Optional[float] = None) -> HealthState:
+        """Run a single liveness check (also the unit of work for the thread).
+
+        ``grace`` overrides how long a dead link is tolerated; the resume hook
+        uses a short one because we know exactly when the link should be back.
+        """
         now = time.monotonic() if now is None else now
+        grace = self.grace_seconds if grace is None else grace
         if not self.enabled:
             return self.snapshot()
         host = self.resolve_host()
@@ -162,7 +167,7 @@ class LinkHealthMonitor:
                 self.state.last_live = now      # start the clock on first sight
                 return self.snapshot()
             stale_for = now - self.state.last_live
-            if stale_for < self.grace_seconds:
+            if stale_for < grace:
                 return self.snapshot()
             self.state.healthy = False
             self.state.reason = (
@@ -205,6 +210,32 @@ class LinkHealthMonitor:
 
         with self._lock:
             self.state.last_live = now + self.grace_seconds   # let it come back before judging again
+
+    # -- resume ------------------------------------------------------------
+
+    def on_resume(self, delay: float = 12.0, grace: float = 8.0) -> None:
+        """Check promptly after waking, rather than waiting for the next poll.
+
+        Suspending the host while the controller stays powered on USB standby
+        can leave its USB endpoint wedged: writes still succeed and nothing
+        upstream reports an error, but the controller consumes nothing.  The
+        link should be back within seconds of resuming, so a short grace is
+        appropriate here even though the routine one is deliberately long.
+        """
+        if not self.enabled:
+            return
+        with self._lock:
+            self.state.last_live = time.monotonic()     # clock starts at the resume
+        def worker() -> None:
+            if self._stop.wait(delay):
+                return
+            try:
+                state = self.check(grace=grace)
+                if state.healthy:
+                    log.info("health: link is alive after resume")
+            except Exception as exc:
+                log.debug("health: resume check failed: %s", exc)
+        threading.Thread(target=worker, name="ledbar-health-resume", daemon=True).start()
 
     # -- lifecycle ---------------------------------------------------------
 

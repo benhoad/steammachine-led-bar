@@ -174,6 +174,7 @@ class HealthConfig:
     max_resets_per_hour: int = 3
     restart_command: str = "systemctl --user restart ledbar-openrgb"
     timeout: float = 3.0
+    resume_check_seconds: float = 12.0   # how long after waking to verify the link
 
 
 @dataclass

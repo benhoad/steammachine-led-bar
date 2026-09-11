@@ -185,6 +185,9 @@ class Daemon:
             if self.inputs.take_resume_event():
                 log.info("resumed from suspend; re-initialising output")
                 self.backend.resync()
+                # reconnecting to OpenRGB is not enough: the controller's own USB
+                # endpoint can be wedged, which only a controller reset clears
+                self.health.on_resume(delay=cfg.health.resume_check_seconds)
                 if cfg.power.resume_boot:
                     self.machine.restart_boot(now)
 

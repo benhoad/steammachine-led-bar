@@ -59,6 +59,10 @@ action = "warn"            # "warn" = log it, "reset" = reboot the controller an
 max_resets_per_hour = 3
 restart_command = "systemctl --user restart ledbar-openrgb"
 timeout = 3.0
+resume_check_seconds = 12.0   # after waking from sleep, verify the link this soon.
+                           # Suspending the host while the controller stays powered on USB
+                           # standby can wedge its USB endpoint; with action = "reset" this
+                           # recovers it in seconds instead of waiting for the next poll.
 
 [output]
 backend = "openrgb"   # "openrgb" = real hardware, "terminal" = simulate in the terminal, "null" = nothing

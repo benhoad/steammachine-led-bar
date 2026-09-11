@@ -124,6 +124,52 @@ class ResetTests(unittest.TestCase):
         self.assertEqual(commands, [])
 
 
+class ResumeTests(unittest.TestCase):
+    """Waking the host can leave the controller's USB endpoint wedged."""
+
+    def test_short_grace_declares_a_dead_link_quickly(self):
+        fetch = FakeFetch(live=False)
+        m = monitor(fetch, grace_seconds=600.0)          # routine grace is long
+        m.check(now=100.0)                                # seeds the clock
+        self.assertTrue(m.check(now=115.0).healthy)       # 15s: fine by the long grace
+        state = m.check(now=115.0, grace=8.0)             # the resume check is impatient
+        self.assertFalse(state.healthy)
+
+    def test_resume_recovers_when_configured_to_reset(self):
+        fetch = FakeFetch(live=False)
+        commands = []
+        m = monitor(fetch, runner=commands.append, action="reset", grace_seconds=600.0)
+        m.check(now=100.0)
+        m.check(now=115.0, grace=8.0)
+        self.assertIn("http://10.0.0.9/reset", fetch.urls)
+        self.assertEqual(commands, [["systemctl", "--user", "restart", "ledbar-openrgb"]])
+
+    def test_resume_is_quiet_when_the_link_came_back_by_itself(self):
+        fetch = FakeFetch(live=True)
+        commands = []
+        m = monitor(fetch, runner=commands.append, action="reset")
+        m.check(now=100.0)
+        state = m.check(now=115.0, grace=8.0)
+        self.assertTrue(state.healthy)
+        self.assertNotIn("http://10.0.0.9/reset", fetch.urls)
+        self.assertEqual(commands, [])
+
+    def test_on_resume_restarts_the_clock(self):
+        fetch = FakeFetch(live=False)
+        m = monitor(fetch)
+        m.check(now=100.0)
+        m.check(now=300.0)                                # unhealthy by now
+        self.assertFalse(m.snapshot().healthy)
+        m.on_resume(delay=999.0)                          # thread will not fire during the test
+        self.assertNotEqual(m.snapshot().last_live, 0.0)  # clock restarted at the resume
+
+    def test_on_resume_is_a_noop_when_disabled(self):
+        m = LinkHealthMonitor(enabled=False, host="1.2.3.4", fetch=FakeFetch(live=False),
+                              discover=lambda: "")
+        m.on_resume(delay=999.0)
+        self.assertEqual(m.snapshot().last_live, 0.0)
+
+
 class HostTests(unittest.TestCase):
     def test_configured_host_wins(self):
         m = LinkHealthMonitor(host="1.2.3.4", fetch=FakeFetch(), discover=lambda: "9.9.9.9")
