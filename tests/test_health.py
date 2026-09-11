@@ -154,6 +154,37 @@ class ResumeTests(unittest.TestCase):
         self.assertNotIn("http://10.0.0.9/reset", fetch.urls)
         self.assertEqual(commands, [])
 
+    def test_resume_returns_as_soon_as_the_link_is_live(self):
+        """A healthy wake must cost nothing, whatever re-enumeration takes."""
+        import time as _t
+        fetch = FakeFetch(live=False)
+        commands = []
+        m = monitor(fetch, runner=commands.append, action="reset")
+        m.on_resume(delay=10.0, poll=0.05)
+        _t.sleep(0.12)
+        fetch.live = True                       # link comes back mid-window
+        _t.sleep(0.25)
+        self.assertNotIn("http://10.0.0.9/reset", fetch.urls)   # never intervened
+        self.assertEqual(commands, [])
+
+    def test_resume_intervenes_only_after_the_window(self):
+        import time as _t
+        fetch = FakeFetch(live=False)           # never comes back
+        commands = []
+        m = monitor(fetch, runner=commands.append, action="reset")
+        m.on_resume(delay=0.2, poll=0.05)
+        _t.sleep(0.1)
+        self.assertNotIn("http://10.0.0.9/reset", fetch.urls)   # still waiting
+        _t.sleep(0.5)
+        self.assertIn("http://10.0.0.9/reset", fetch.urls)      # window expired, acted
+        self.assertEqual(commands, [["systemctl", "--user", "restart", "ledbar-openrgb"]])
+
+    def test_check_reports_liveness_separately_from_health(self):
+        m = monitor(FakeFetch(live=False), grace_seconds=600.0)
+        state = m.check(now=100.0)
+        self.assertFalse(state.live)            # not receiving
+        self.assertTrue(state.healthy)          # but still inside the grace period
+
     def test_on_resume_restarts_the_clock(self):
         fetch = FakeFetch(live=False)
         m = monitor(fetch)

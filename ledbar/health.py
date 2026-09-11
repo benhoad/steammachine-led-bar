@@ -35,6 +35,7 @@ log = logging.getLogger("ledbar.health")
 class HealthState:
     host: str = ""
     checked: bool = False          # did we manage to reach the controller at all
+    live: bool = False             # is the controller receiving our frames right now
     healthy: bool = True
     reason: str = ""
     last_live: float = 0.0
@@ -153,6 +154,7 @@ class LinkHealthMonitor:
         live = bool(info.get("live"))
         with self._lock:
             self.state.checked = True
+            self.state.live = live
             self.state.host = host
             if live or not self._streaming:
                 # streaming and seen, or not streaming so nothing is expected
@@ -213,28 +215,42 @@ class LinkHealthMonitor:
 
     # -- resume ------------------------------------------------------------
 
-    def on_resume(self, delay: float = 12.0, grace: float = 8.0) -> None:
-        """Check promptly after waking, rather than waiting for the next poll.
+    def on_resume(self, delay: float = 12.0, poll: float = 2.0) -> None:
+        """Watch for the link coming back after a wake, and intervene only if it doesn't.
 
-        Suspending the host while the controller stays powered on USB standby
-        can leave its USB endpoint wedged: writes still succeed and nothing
-        upstream reports an error, but the controller consumes nothing.  The
-        link should be back within seconds of resuming, so a short grace is
-        appropriate here even though the routine one is deliberately long.
+        Suspending the host while the controller stays powered on USB standby can
+        leave its USB endpoint wedged: writes still succeed and nothing upstream
+        reports an error, but the controller consumes nothing.
+
+        Rather than guessing how long re-enumeration takes, this polls across the
+        window and returns the moment the link is live - so a healthy wake costs
+        nothing and is never mistaken for a fault.  ``delay`` is therefore "how
+        long to allow before intervening", not "how long to wait before looking".
+        The time it took is logged, which is the measurement worth having.
         """
         if not self.enabled:
             return
+        started = time.monotonic()
         with self._lock:
-            self.state.last_live = time.monotonic()     # clock starts at the resume
+            self.state.last_live = started              # clock starts at the resume
+
         def worker() -> None:
-            if self._stop.wait(delay):
-                return
             try:
-                state = self.check(grace=grace)
-                if state.healthy:
-                    log.info("health: link is alive after resume")
+                while not self._stop.is_set():
+                    if self._stop.wait(poll):
+                        return
+                    elapsed = time.monotonic() - started
+                    state = self.check(grace=float("inf"))   # observe, do not judge yet
+                    if state.live:
+                        log.info("health: link alive %.1fs after resume", elapsed)
+                        return
+                    if elapsed >= delay:
+                        break
+                log.warning("health: link still dead %.0fs after resume", time.monotonic() - started)
+                self.check(grace=0.0)                        # now judge, and act if configured
             except Exception as exc:
                 log.debug("health: resume check failed: %s", exc)
+
         threading.Thread(target=worker, name="ledbar-health-resume", daemon=True).start()
 
     # -- lifecycle ---------------------------------------------------------
