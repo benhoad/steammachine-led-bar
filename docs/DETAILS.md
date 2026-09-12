@@ -175,3 +175,48 @@ become a reboot loop.
 
 The controller address comes from `[health] host`, or from mDNS discovery
 (`_wled._tcp` via `avahi-browse`) when that is left empty.
+
+## Home Assistant hooks (sleep and wake)
+
+A console tells the TV to wake over the HDMI cable. A PC cannot: consumer
+motherboards do not implement HDMI-CEC, and neither do the graphics cards. But
+ledbar is already listening to logind for suspend and resume — it is what makes
+the bar go dark during sleep — so it knows the moment the machine's power state
+changes, and Home Assistant already knows how to reach everything in the room.
+`[homeassistant]` joins the two with one HTTP request.
+
+Each configured action is either a **webhook** (`webhook:<id>` → `POST
+/api/webhook/<id>`, no token) or a **service call** (`media_player.turn_on
+media_player.tv` → `POST /api/services/media_player/turn_on`, bearer token).
+Webhooks are sent `{"event": "wake"|"sleep"|"shutdown"}` so one webhook and one
+automation can handle every direction.
+
+The two directions fail in opposite ways, and each is handled for it:
+
+**Waking** is a race with the network. The machine is back long before Wi-Fi is,
+so the first request usually fails outright with "network unreachable". Wake
+actions therefore run on their own thread and are retried (1s, 2s, 4s, …) for
+`wake_retry_seconds` rather than being dropped. Nothing blocks the render loop.
+
+**Sleeping** is a race with the suspend. logind emits `PrepareForSleep(true)` and
+then suspends as soon as the delay inhibitors are gone — which, without one of
+our own, is immediately. The request would sometimes get out and sometimes not.
+So when sleep or shutdown actions are configured, ledbar holds a logind delay
+lock (`systemd-inhibit --what=sleep:shutdown --mode=delay`) for as long as it
+runs, and releases it the moment the hook has been sent. That is the pattern
+logind documents, and the wait is bounded by `InhibitDelayMaxSec` (5 s by
+default) whatever ledbar does. Sleep actions are sent inline, with no retry:
+there is nowhere to retry to.
+
+Shutdown is best effort. `PrepareForShutdown` arrives with the same delay lock
+held, but the user service is being torn down around it.
+
+The token can live in the config (`token`), in a file (`token_file`, so it is not
+in a world-readable config), or in `$LEDBAR_HA_TOKEN`; the first one set wins.
+Webhooks need none of them, which is the easiest way to start.
+
+Actions are parsed when the config loads, so a typo is an error at startup and in
+`ledbar config check` rather than a surprise at 2am. `ledbar ha wake` fires the
+hooks by hand — the only practical way to test them without suspending the
+machine — and `ledbar ha wake --dry-run` prints the requests instead of sending
+them.

@@ -188,3 +188,39 @@ on_exit = "mode:Breathing" # when the service stops (logout, reboot, shutdown):
 fade_seconds = 0.4         # fade-out duration on exit
 resume_boot = false        # replay the boot animation after waking from suspend
 
+
+[homeassistant]
+# Tell Home Assistant when the machine sleeps and wakes, so it can bring the TV
+# and soundbar with it. This is the PC's substitute for HDMI-CEC: a console tells
+# the TV to wake over the HDMI cable, a PC cannot, but Home Assistant already
+# knows how to reach everything in the room.
+enabled = false
+url = ""                   # e.g. "http://homeassistant.local:8123" (no trailing path)
+token = ""                 # long-lived access token: Home Assistant -> your profile ->
+                           # Security -> Long-lived access tokens -> Create token.
+                           # Only webhook: actions work without one.
+token_file = ""            # read the token from this file instead, e.g. "~/.config/ledbar/ha-token",
+                           # so it is not sitting in a config file. $LEDBAR_HA_TOKEN also works.
+
+# Each action is one of:
+#   "webhook:<id>"                          POST to a webhook; needs no token. Create one in
+#                                           Home Assistant with an automation "Webhook" trigger.
+#                                           The body is {"event": "wake"|"sleep"|"shutdown"},
+#                                           so one webhook can handle both directions.
+#   "<domain>.<service>"                    e.g. "script.movie_time"
+#   "<domain>.<service> <entity>[,<entity>]" e.g. "media_player.turn_on media_player.tv"
+#   ... optionally with extra service data as trailing JSON. Use TOML's single-quoted
+#       strings so the quotes inside need no escaping:
+#       'media_player.select_source media_player.soundbar {"source": "HDMI 2"}'
+on_wake = []               # e.g. ["media_player.turn_on media_player.tv,media_player.soundbar"]
+on_sleep = []              # e.g. ["media_player.turn_off media_player.tv,media_player.soundbar"]
+on_shutdown = []           # best effort: the machine may be gone before this lands
+
+timeout = 5.0              # per-request timeout
+wake_retry_seconds = 20.0  # the machine is back before the network is, so a failed wake action
+                           # is retried (1s, 2s, 4s ...) for this long instead of being dropped
+inhibit_sleep = true       # hold a logind delay lock while ledbar runs, and release it once the
+                           # sleep actions have been sent. Without it logind suspends the moment
+                           # it announces the sleep and the request usually loses the race.
+                           # Only taken when on_sleep/on_shutdown are set; logind caps the delay
+                           # at InhibitDelayMaxSec (5s by default) whatever happens.

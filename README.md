@@ -148,6 +148,7 @@ default host/port `127.0.0.1:6742`, and install ledbar with
 | `ledbar status` | shows what it sees: Steam, temperatures, OpenRGB device |
 | `ledbar demo` | cycles through all patterns (`ledbar demo --list` for single states) |
 | `ledbar wled-setup` | applies the WLED settings ledbar needs (`--dry-run` to preview) |
+| `ledbar ha wake` | fires the Home Assistant wake hook by hand, to test it (`sleep` too) |
 | `systemctl --user restart ledbar` | apply config changes |
 | `journalctl --user -u ledbar -f` | live log |
 | `bash uninstall.sh` | remove it (keeps your config unless `--purge`) |
@@ -224,6 +225,48 @@ An OS update takes priority over a game download, since it's the one you don't w
 to reboot through. It still loses to overheating and hardware faults. Note there's no
 percentage: the Bazzite updater doesn't publish one, so ledbar shows a fill only if
 something hands it a fraction.
+
+### Home Assistant: TV and soundbar with the PC
+
+A games console tells the TV to wake over the HDMI cable. A PC cannot — consumer
+motherboards have no HDMI-CEC — but ledbar is already watching logind for sleep
+and wake, so it can tell Home Assistant instead:
+
+```toml
+[homeassistant]
+enabled = true
+url = "http://homeassistant.local:8123"
+token_file = "~/.config/ledbar/ha-token"    # or token = "...", or $LEDBAR_HA_TOKEN
+on_wake  = ["media_player.turn_on media_player.tv,media_player.soundbar"]
+on_sleep = ["media_player.turn_off media_player.tv,media_player.soundbar"]
+```
+
+An action is either a **service call** — `"<domain>.<service> <entity>[,<entity>]"`,
+with optional service data as trailing JSON — or a **webhook**, `"webhook:<id>"`,
+which needs no token at all and is the quickest way to start:
+
+```toml
+on_wake  = ["webhook:steam_machine"]
+on_sleep = ["webhook:steam_machine"]
+```
+
+Create it in Home Assistant with an automation on a **Webhook** trigger; the body
+is `{"event": "wake"}` or `{"event": "sleep"}`, so one webhook and one automation
+can handle both directions (`{{ trigger.json.event }}`). The token, for service
+calls, comes from your Home Assistant profile → Security → Long-lived access tokens.
+
+Test the hooks without suspending anything:
+
+```bash
+ledbar ha wake
+```
+
+(`ledbar ha sleep`, and `--dry-run` to print the requests instead of sending them.)
+
+Two details that are handled for you: waking is retried for ~20 s, because the
+machine is back before the network is; and going to sleep, ledbar holds a logind
+delay lock so the request actually leaves before the machine suspends. There is
+also `on_shutdown`, which is best effort — the machine may be gone before it lands.
 
 ## Optional: the power-LED indicator (WLED usermod)
 

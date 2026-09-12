@@ -16,6 +16,7 @@ from typing import Optional
 
 from .backends.base import Backend, BackendError
 from .health import LinkHealthMonitor
+from .homeassistant import HomeAssistant
 from .colors import RGB8
 from .config import Config
 from .power import PowerMonitor
@@ -60,7 +61,24 @@ class LiveInputs(InputSource):
         )
         self.thermal = ThermalMonitor(config.thermal)
         self.faults = FaultMonitor(config.faults, lambda: list(self.steam.libraries))
-        self.power = PowerMonitor(config.power.monitor)
+        ha = config.homeassistant
+        self.homeassistant = HomeAssistant(
+            enabled=ha.enabled,
+            url=ha.url,
+            token=ha.token,
+            token_file=ha.token_file,
+            on_wake=ha.on_wake,
+            on_sleep=ha.on_sleep,
+            on_shutdown=ha.on_shutdown,
+            timeout=ha.timeout,
+            wake_retry_seconds=ha.wake_retry_seconds,
+            inhibit_sleep=ha.inhibit_sleep,
+        )
+        self.power = PowerMonitor(
+            config.power.monitor,
+            on_event=self.homeassistant.fire,
+            inhibit=self.homeassistant.needs_delay_lock,
+        )
         self.updates = SystemUpdateMonitor(
             enabled=config.updates.system,
             units=config.updates.units,
@@ -80,6 +98,10 @@ class LiveInputs(InputSource):
         self.power.start()
         if self.power.available:
             log.info("sleep/shutdown detection via %s", self.power.tool)
+        if self.homeassistant.active:
+            log.info("home assistant hooks: %s", self.homeassistant.describe())
+            if self.homeassistant.needs_delay_lock and not self.power.available:
+                log.warning("home assistant sleep hooks need logind monitoring ([power] monitor = true)")
 
     def poll(self, now: float) -> Inputs:
         if now - self._last_steam >= self.config.steam.poll_interval:
@@ -107,6 +129,7 @@ class LiveInputs(InputSource):
 
     def stop(self) -> None:
         self.power.stop()
+        self.homeassistant.stop()
 
 
 class Daemon:

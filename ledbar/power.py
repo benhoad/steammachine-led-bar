@@ -2,6 +2,14 @@
 
 Uses ``gdbus monitor`` (part of glib2, present on Bazzite) as a subprocess
 so that no D-Bus Python bindings are needed.  Falls back to ``busctl``.
+
+An optional ``on_event`` callback turns those signals into hooks ("wake",
+"sleep", "shutdown").  Anything that has to *act* before the machine suspends
+needs logind to wait for it, which is what the delay inhibitor is for: logind
+emits ``PrepareForSleep(true)`` and then suspends as soon as the delay locks are
+gone, so without one there is no guaranteed time at all - only a race the hook
+usually loses.  The lock is therefore held continuously and released after the
+callback returns, which is the pattern logind documents.
 """
 
 from __future__ import annotations
@@ -11,7 +19,7 @@ import shutil
 import subprocess
 import threading
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 log = logging.getLogger("ledbar.power")
 
@@ -19,13 +27,20 @@ GDBUS_CMD = ["gdbus", "monitor", "--system", "--dest", "org.freedesktop.login1",
              "--object-path", "/org/freedesktop/login1"]
 BUSCTL_CMD = ["busctl", "monitor", "--system",
               "--match", "type='signal',interface='org.freedesktop.login1.Manager'"]
+# held while ledbar is running, released once the sleep/shutdown hook has run;
+# logind caps the wait at InhibitDelayMaxSec (5 s by default) regardless
+INHIBIT_CMD = ["systemd-inhibit", "--what=sleep:shutdown", "--mode=delay", "--who=ledbar",
+               "--why=running the ledbar sleep/wake hooks", "sleep", "infinity"]
 
 
 class PowerMonitor:
     """Tracks ``sleeping`` / ``shutting_down`` flags from logind signals."""
 
-    def __init__(self, enabled: bool = True) -> None:
+    def __init__(self, enabled: bool = True, on_event: Optional[Callable[[str], None]] = None,
+                 inhibit: bool = False) -> None:
         self.enabled = enabled
+        self.on_event = on_event
+        self.inhibit = inhibit
         self.sleeping = False
         self.shutting_down = False
         self.available = False
@@ -35,6 +50,7 @@ class PowerMonitor:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._proc: Optional[subprocess.Popen[str]] = None
+        self._inhibitor: Optional[subprocess.Popen[bytes]] = None
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -49,11 +65,13 @@ class PowerMonitor:
             log.info("neither gdbus nor busctl found; sleep/shutdown detection disabled")
             return
         self.available = True
+        self._take_inhibitor()
         self._thread = threading.Thread(target=self._run, name="ledbar-power", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
+        self._release_inhibitor()
         proc = self._proc
         if proc is not None and proc.poll() is None:
             try:
@@ -121,12 +139,58 @@ class PowerMonitor:
 
     def _set_sleeping(self, value: bool) -> None:
         with self._lock:
-            if self.sleeping and not value:
+            resumed = self.sleeping and not value
+            if resumed:
                 self._resume_pending = True
             self.sleeping = value
         log.info("system is %s", "going to sleep" if value else "waking up")
+        if value:
+            # run the hook, then let go of the lock that is holding the suspend up
+            self._fire("sleep")
+            self._release_inhibitor()
+        else:
+            self._take_inhibitor()      # be ready for the next suspend
+            if resumed:
+                self._fire("wake")
 
     def _set_shutdown(self) -> None:
         with self._lock:
             self.shutting_down = True
         log.info("system is shutting down")
+        self._fire("shutdown")
+        self._release_inhibitor()
+
+    # -- hooks -------------------------------------------------------------
+
+    def _fire(self, event: str) -> None:
+        if self.on_event is None:
+            return
+        try:
+            self.on_event(event)
+        except Exception as exc:        # a hook must never stop the bar, or the suspend
+            log.warning("power: %s hook failed: %s", event, exc)
+
+    def _take_inhibitor(self) -> None:
+        """Hold a logind delay lock so the sleep hook has time to be sent."""
+        if not self.inhibit or self._inhibitor is not None or self._stop.is_set():
+            return
+        if not shutil.which("systemd-inhibit"):
+            log.warning("systemd-inhibit not found: sleep hooks may not be sent before the machine suspends")
+            self.inhibit = False
+            return
+        try:
+            self._inhibitor = subprocess.Popen(INHIBIT_CMD, stdout=subprocess.DEVNULL,
+                                               stderr=subprocess.DEVNULL)
+        except OSError as exc:
+            log.warning("cannot hold a sleep inhibitor: %s", exc)
+            self.inhibit = False
+
+    def _release_inhibitor(self) -> None:
+        proc, self._inhibitor = self._inhibitor, None
+        if proc is None:
+            return
+        try:
+            proc.terminate()
+            proc.wait(timeout=2)
+        except (OSError, subprocess.SubprocessError):
+            pass

@@ -317,6 +317,35 @@ class LiveSourceTests(unittest.TestCase):
             MANIFEST.replace('"440"', '"10"') % (STATE_DOWNLOADING | STATE_UPDATE_STARTED | 6))
         self.assertFalse(monitor.poll().active)
 
+    def test_manifest_supplies_the_fraction_the_client_lacks(self):
+        """A LAN peer transfer reports update_state "hosting" with no percentage.
+
+        Real numbers from a Mass Effect LE transfer: the client gave no progress
+        while the manifest had 40.1 GB of 104.3 GB.
+        """
+        manifest = MANIFEST.replace('"440"', '"1328670"')
+        manifest = manifest.replace('"BytesToDownload"\t\t"1000"', '"BytesToDownload"\t\t"104259167232"')
+        manifest = manifest.replace('"BytesDownloaded"\t\t"250"', '"BytesDownloaded"\t\t"40123126608"')
+        (self.steamapps / "appmanifest_1328670.acf").write_text(
+            manifest % (STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED))
+        state = self.live(active=True, fraction=None, appid=1328670, state="Hosting")
+        self.assertTrue(state.active)
+        self.assertEqual(state.source, "cef")
+        self.assertIsNotNone(state.fraction, "the manifest had the number all along")
+        self.assertAlmostEqual(state.fraction, 40123126608 / 104259167232, places=4)
+
+    def test_client_fraction_still_wins_when_it_has_one(self):
+        manifest = MANIFEST.replace('"440"', '"1328670"')
+        (self.steamapps / "appmanifest_1328670.acf").write_text(
+            manifest % (STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED))
+        state = self.live(active=True, fraction=0.9, appid=1328670, state="Running")
+        self.assertAlmostEqual(state.fraction, 0.9)   # 0.25 in the manifest is ignored
+
+    def test_still_indeterminate_when_neither_knows(self):
+        state = self.live(active=True, fraction=None, appid=999999, state="Hosting")
+        self.assertTrue(state.active)
+        self.assertIsNone(state.fraction)             # breathe, rather than a false 0%
+
     def test_unknown_appid_still_gives_a_usable_app(self):
         state = self.live(active=True, fraction=0.1, appid=999999, state="Running")
         self.assertTrue(state.active)

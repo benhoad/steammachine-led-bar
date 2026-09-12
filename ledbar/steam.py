@@ -528,11 +528,19 @@ class SteamMonitor:
             # manifests have not been rewritten yet, and knows when one stops.
             state.source = "cef"
             if live.active:
+                app = self._app_for(statuses, live.appid)
+                fraction = live.fraction
+                if fraction is None and app is not None:
+                    # The client knows *that* something is transferring but not always
+                    # how far along: LAN peer transfers report update_state "hosting"
+                    # with no percentage.  The manifest usually has the byte counts, so
+                    # prefer the client's answer and fall back to the file's.
+                    fraction = app.fraction
                 state.active = True
-                state.fraction = live.fraction
+                state.fraction = fraction
                 state.phase = live.state.lower() if live.state.lower() not in ("none", "") else "downloading"
                 state.paused = live.paused
-                state.app = self._app_for(statuses, live.appid)
+                state.app = app
             self.state = state
             return state
 

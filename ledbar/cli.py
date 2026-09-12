@@ -327,6 +327,18 @@ def cmd_status(args: argparse.Namespace) -> int:
         print("Link health: not checked ([health] enabled = false)")
     tool = "gdbus" if shutil.which("gdbus") else "busctl" if shutil.which("busctl") else "none"
     print(f"Sleep/shutdown detection: {tool}")
+    from .homeassistant import HomeAssistant
+
+    client = HomeAssistant(
+        enabled=config.homeassistant.enabled, url=config.homeassistant.url,
+        token=config.homeassistant.token, token_file=config.homeassistant.token_file,
+        on_wake=config.homeassistant.on_wake, on_sleep=config.homeassistant.on_sleep,
+        on_shutdown=config.homeassistant.on_shutdown,
+        inhibit_sleep=config.homeassistant.inhibit_sleep,
+    )
+    print(f"Home Assistant hooks: {client.describe()}")
+    if client.needs_delay_lock and not shutil.which("systemd-inhibit"):
+        print("  warning: systemd-inhibit not found, so a sleep hook may not be sent before suspend")
     print()
 
     # OpenRGB --------------------------------------------------------------
@@ -388,6 +400,40 @@ def cmd_wled_setup(args: argparse.Namespace) -> int:
     else:
         print("Done. Colour order, reverse and skip were left alone: ledbar handles those.")
     return 0
+
+
+def cmd_ha(args: argparse.Namespace) -> int:
+    """Fire the sleep/wake hooks by hand, so they can be tested without suspending."""
+    config = _load(args)
+    _setup_logging(args.log_level or "warning", quiet_tty=False)
+    from .homeassistant import HomeAssistant
+
+    ha = config.homeassistant
+    if not ha.url:
+        print("No Home Assistant URL. Set [homeassistant] url in the config.", file=sys.stderr)
+        return 2
+    client = HomeAssistant(
+        enabled=True,                       # --- so hooks can be tried before enabling them
+        url=ha.url, token=ha.token, token_file=ha.token_file,
+        on_wake=ha.on_wake, on_sleep=ha.on_sleep, on_shutdown=ha.on_shutdown,
+        timeout=ha.timeout,
+    )
+    actions = client.actions[args.event]
+    if not actions:
+        print(f"No [homeassistant] on_{args.event} actions configured.")
+        return 0
+    if not ha.enabled:
+        print("note: [homeassistant] enabled = false, so these will not fire on their own yet")
+    print(f"{ha.url}: {args.event}")
+    if args.dry_run:
+        for action in actions:
+            print(f"  would POST {action.url(client.url)}  {json.dumps(action.payload(args.event))}")
+        return 0
+    failed = 0
+    for action, error in client.send_now(args.event):
+        print(f"  {'FAILED ' if error else 'sent   '}{action.spec}" + (f"  ({error})" if error else ""))
+        failed += bool(error)
+    return 1 if failed else 0
 
 
 def cmd_config(args: argparse.Namespace) -> int:
@@ -459,6 +505,11 @@ def build_parser() -> argparse.ArgumentParser:
     wled.add_argument("--pin", type=int, help="also set WLED's data GPIO")
     wled.add_argument("--dry-run", action="store_true", help="show what would change")
     wled.set_defaults(func=cmd_wled_setup)
+
+    ha = sub.add_parser("ha", help="fire the Home Assistant wake/sleep hooks now (to test them)", parents=[common])
+    ha.add_argument("event", choices=["wake", "sleep", "shutdown"])
+    ha.add_argument("--dry-run", action="store_true", help="show the requests instead of sending them")
+    ha.set_defaults(func=cmd_ha)
 
     config = sub.add_parser("config", help="manage the config file", parents=[common])
     config.add_argument("action", choices=["init", "show", "path", "check"])

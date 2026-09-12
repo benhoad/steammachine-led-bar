@@ -165,6 +165,24 @@ class PowerConfig:
 
 
 @dataclass
+class HomeAssistantConfig:
+    """Calls Home Assistant when the machine sleeps and wakes (a PC has no CEC)."""
+
+    enabled: bool = False
+    url: str = ""                   # e.g. "http://homeassistant.local:8123"
+    token: str = ""                 # long-lived access token; or token_file, or $LEDBAR_HA_TOKEN
+    token_file: str = ""            # read the token from this file instead
+    on_wake: list[str] = field(default_factory=list)      # actions to run on resume
+    on_sleep: list[str] = field(default_factory=list)     # ... just before suspend
+    on_shutdown: list[str] = field(default_factory=list)  # ... on shutdown (best effort)
+    timeout: float = 5.0
+    wake_retry_seconds: float = 20.0  # keep retrying a failed wake action this long (the
+                                      # network comes back a moment after the machine does)
+    inhibit_sleep: bool = True      # hold a logind delay lock so the sleep actions are sent
+                                    # before the machine actually suspends
+
+
+@dataclass
 class WledConfig:
     host: str = ""                  # "" = use [health] host, then mDNS discovery
     idle_color: str = ""            # what WLED shows when ledbar is not streaming.
@@ -222,6 +240,7 @@ class Config:
     thermal: ThermalConfig = field(default_factory=ThermalConfig)
     faults: FaultsConfig = field(default_factory=FaultsConfig)
     power: PowerConfig = field(default_factory=PowerConfig)
+    homeassistant: HomeAssistantConfig = field(default_factory=HomeAssistantConfig)
     log_level: str = "info"
     path: Optional[Path] = None
     warnings: list[str] = field(default_factory=list)
@@ -257,6 +276,7 @@ _SECTIONS = {
     "thermal": ThermalConfig,
     "faults": FaultsConfig,
     "power": PowerConfig,
+    "homeassistant": HomeAssistantConfig,
 }
 
 
@@ -370,6 +390,36 @@ def _check_choice(value: str, choices: tuple[str, ...], where: str) -> None:
         raise ConfigError(f"{where} must be one of {', '.join(choices)} (got {value!r})")
 
 
+def _validate_homeassistant(config: Config) -> None:
+    """Check the hook actions now, so a typo is reported instead of discovered at 2am."""
+    ha = config.homeassistant
+    if ha.url and not ha.url.startswith(("http://", "https://")):
+        raise ConfigError(f"[homeassistant] url must start with http:// or https:// (got {ha.url!r})")
+    if ha.timeout <= 0:
+        raise ConfigError("[homeassistant] timeout must be positive")
+    if ha.wake_retry_seconds < 0:
+        raise ConfigError("[homeassistant] wake_retry_seconds cannot be negative")
+    from .homeassistant import parse_action
+
+    needs_token = False
+    for event in ("on_wake", "on_sleep", "on_shutdown"):
+        for spec in getattr(ha, event):
+            try:
+                needs_token |= parse_action(spec).needs_token
+            except ValueError as exc:
+                raise ConfigError(f"[homeassistant] {event}: {exc}") from exc
+    if not ha.enabled:
+        return
+    if not ha.url:
+        config.warnings.append("[homeassistant] enabled = true but no url is set, so nothing is sent")
+    elif not any(getattr(ha, e) for e in ("on_wake", "on_sleep", "on_shutdown")):
+        config.warnings.append("[homeassistant] enabled = true but no actions are configured")
+    if needs_token and not (ha.token or ha.token_file or os.environ.get("LEDBAR_HA_TOKEN")):
+        config.warnings.append(
+            "[homeassistant] a service-call action needs an access token; set token, token_file "
+            "or LEDBAR_HA_TOKEN (webhook: actions do not)")
+
+
 def validate(config: Config) -> None:
     leds = config.leds
     if leds.count < 1 or leds.count > 1000:
@@ -437,6 +487,7 @@ def validate(config: Config) -> None:
             raise ConfigError(f"[game] color: {exc}") from exc
     if not 1 <= config.openrgb.port <= 65535:
         raise ConfigError("[openrgb] port must be between 1 and 65535")
+    _validate_homeassistant(config)
     config.log_level = config.log_level.lower()
     _check_choice(config.log_level, ("debug", "info", "warning", "error"), "log_level")
 

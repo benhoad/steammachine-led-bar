@@ -70,7 +70,7 @@ class ConfigTests(unittest.TestCase):
         example = Path(__file__).resolve().parent.parent / "ledbar" / "config.example.toml"
         config = config_from_dict(tomllib.load(open(example, "rb")))
         self.assertEqual(config.warnings, [])
-        for section in ("leds", "indicator", "openrgb", "colors", "boot", "idle", "game", "progress", "steam", "thermal", "faults", "power"):
+        for section in ("leds", "indicator", "openrgb", "colors", "boot", "idle", "game", "progress", "steam", "thermal", "faults", "power", "homeassistant"):
             self.assertEqual(getattr(config, section), getattr(Config(), section), section)
 
 
